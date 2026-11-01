@@ -1,12 +1,13 @@
 package com.bona.fileflow
 
-import android.os.Bundle
+import android.content.Intent
 import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,6 +18,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -29,7 +31,6 @@ private val Muted = Color(0xFF9292A5)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         setContent {
             FileFlowApp()
         }
@@ -37,14 +38,34 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-    var selectedDocument by remember {
-        mutableStateOf<Uri?>(null)
-    }
+fun FileFlowApp() {
+    val context = LocalContext.current
+
+    var selectedTab by remember { mutableIntStateOf(0) }
+    var searchText by remember { mutableStateOf("") }
+    var selectedDocument by remember { mutableStateOf<Uri?>(null) }
 
     val documentPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         selectedDocument = uri
+
+        if (uri != null) {
+            val mimeType = context.contentResolver.getType(uri)
+
+            if (mimeType == "application/pdf") {
+                val intent = Intent(context, PdfViewerActivity::class.java)
+                intent.putExtra("pdf_uri", uri)
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(intent)
+            } else {
+                Toast.makeText(
+                    context,
+                    "This file format is not supported yet.",
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+        }
     }
 
     MaterialTheme(
@@ -59,12 +80,9 @@ class MainActivity : ComponentActivity() {
         Scaffold(
             containerColor = Background,
             bottomBar = {
-                NavigationBar(
-                    containerColor = SurfaceDark
-                ) {
+                NavigationBar(containerColor = SurfaceDark) {
                     val tabs = listOf(
-                        "Home", "Files", "Tools",
-                        "Favorites", "Settings"
+                        "Home", "Files", "Tools", "Favorites", "Settings"
                     )
                     val icons = listOf("⌂", "▤", "⚒", "♡", "⚙")
 
@@ -73,10 +91,7 @@ class MainActivity : ComponentActivity() {
                             selected = selectedTab == index,
                             onClick = { selectedTab = index },
                             icon = {
-                                Text(
-                                    icons[index],
-                                    fontSize = 21.sp
-                                )
+                                Text(icons[index], fontSize = 21.sp)
                             },
                             label = { Text(title) }
                         )
@@ -97,8 +112,7 @@ class MainActivity : ComponentActivity() {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement =
-                            Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
@@ -119,10 +133,7 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier
                                 .size(44.dp)
-                                .background(
-                                    SurfaceDark,
-                                    CircleShape
-                                ),
+                                .background(SurfaceDark, CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
                             Text("B", color = Purple, fontSize = 20.sp)
@@ -131,9 +142,9 @@ class MainActivity : ComponentActivity() {
                 }
 
                 item {
-                    Column(verticalArrangement =
-                        Arrangement.spacedBy(12.dp)) {
-
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
                         Text(
                             "Good day!",
                             color = Color.White,
@@ -161,24 +172,33 @@ class MainActivity : ComponentActivity() {
                 }
 
                 item {
-    item {
-    selectedDocument?.let { uri ->
-        Text(
-            text = "Selected: ${uri.lastPathSegment}",
-            color = Purple,
-            fontSize = 12.sp
-        )
-    }
-}
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Text(
-            "＋  Open a document",
-            modifier = Modifier.padding(8.dp)
-        )
-    }
-}
+                    Button(
+                        onClick = {
+                            documentPicker.launch(arrayOf("*/*"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text(
+                            "＋  Open a document",
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
+
+                item {
+                    selectedDocument?.let { uri ->
+                        Text(
+                            text = "Selected: ${uri.lastPathSegment}",
+                            color = Purple,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                item {
+                    Text(
+                        "QUICK ACCESS",
                         color = Muted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
@@ -195,14 +215,13 @@ class MainActivity : ComponentActivity() {
                         "EPUB" to "📚"
                     )
 
-                    Column(verticalArrangement =
-                        Arrangement.spacedBy(10.dp)) {
-
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
                         formats.chunked(3).forEach { group ->
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement =
-                                    Arrangement.spacedBy(10.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 group.forEach { (name, emoji) ->
                                     Card(
@@ -216,13 +235,9 @@ class MainActivity : ComponentActivity() {
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 17.dp),
-                                            horizontalAlignment =
-                                                Alignment.CenterHorizontally
+                                            horizontalAlignment = Alignment.CenterHorizontally
                                         ) {
-                                            Text(
-                                                emoji,
-                                                fontSize = 25.sp
-                                            )
+                                            Text(emoji, fontSize = 25.sp)
                                             Spacer(Modifier.height(7.dp))
                                             Text(
                                                 name,
@@ -233,6 +248,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                 }
+
                                 repeat(3 - group.size) {
                                     Spacer(Modifier.weight(1f))
                                 }
@@ -244,8 +260,7 @@ class MainActivity : ComponentActivity() {
                 item {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement =
-                            Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -273,11 +288,9 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(28.dp),
-                            horizontalAlignment =
-                                Alignment.CenterHorizontally
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Text("📂", fontSize = 42.sp)
-
                             Spacer(Modifier.height(12.dp))
 
                             Text(
