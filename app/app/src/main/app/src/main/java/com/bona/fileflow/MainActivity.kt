@@ -161,8 +161,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                 item {
-                    Text(
-                        "QUICK ACCESS",
+    Button(
+        onClick = {
+            documentPicker.launch(arrayOf("*/*"))
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Text(
+            "＋  Open a document",
+            modifier = Modifier.padding(8.dp)
+        )
+    }
+}
                         color = Muted,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
