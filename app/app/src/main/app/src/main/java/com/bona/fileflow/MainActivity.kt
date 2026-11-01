@@ -37,9 +37,15 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun FileFlowApp() {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    var searchText by remember { mutableStateOf("") }
+    var selectedDocument by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+    val documentPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        selectedDocument = uri
+    }
 
     MaterialTheme(
         colorScheme = darkColorScheme(
