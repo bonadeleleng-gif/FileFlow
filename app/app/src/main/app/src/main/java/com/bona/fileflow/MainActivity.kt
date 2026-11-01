@@ -161,10 +161,15 @@ class MainActivity : ComponentActivity() {
                 }
 
                 item {
-    Button(
-        onClick = {
-            documentPicker.launch(arrayOf("*/*"))
-        },
+    item {
+    selectedDocument?.let { uri ->
+        Text(
+            text = "Selected: ${uri.lastPathSegment}",
+            color = Purple,
+            fontSize = 12.sp
+        )
+    }
+}
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
     ) {
