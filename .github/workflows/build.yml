@@ -33,7 +33,7 @@ jobs:
       - name: Build APK
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+         ./gradlew -Pandroid.useAndroidX=true assembleDebug
 
       - name: Save APK
         uses: actions/upload-artifact@v4
