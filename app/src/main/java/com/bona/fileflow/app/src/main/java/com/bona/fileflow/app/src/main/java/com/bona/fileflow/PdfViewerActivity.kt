@@ -67,7 +67,7 @@ class PdfViewerActivity : Activity() {
         }
 
         pageLabel = TextView(this).apply {
-            textColor = Color.WHITE
+            setTextColor(Color.WHITE)
             textSize = 16f
             gravity = Gravity.CENTER
             setPadding(8, 16, 8, 16)
@@ -81,7 +81,7 @@ class PdfViewerActivity : Activity() {
         val scrollView = ScrollView(this).apply {
             addView(
                 imageView,
-                ScrollView.LayoutParams(
+                ViewGroup.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
