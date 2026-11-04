@@ -294,7 +294,7 @@ class PdfViewerActivity : Activity() {
         menu.menu.add("Screen brightness")
         menu.menu.add("Export this page as PDF")
         menu.menu.add("Export this page as image")
-        menu.menu.add("Protect exported PDF with password")
+        menu.menu.add("Protect entire PDF with password")
         menu.setOnMenuItemClickListener { item ->
             when (item.title.toString()) {
                 "Save this section" -> saveCurrentSection()
@@ -311,7 +311,7 @@ class PdfViewerActivity : Activity() {
                 "Screen brightness" -> showBrightnessControl()
                 "Export this page as PDF" -> exportCurrentPage(false)
                 "Export this page as image" -> exportCurrentPageAsImage()
-                "Protect exported PDF with password" -> exportCurrentPage(true)
+                "Protect entire PDF with password" -> protectEntirePdf()
             }
             true
         }
@@ -553,6 +553,68 @@ class PdfViewerActivity : Activity() {
             putExtra(Intent.EXTRA_TEXT, lastOcrText)
         }
         startActivity(Intent.createChooser(intent, "Send extracted text to a translation app"))
+    }
+
+    private fun protectEntirePdf() {
+        val passwordInput = EditText(this).apply {
+            hint = "Set a password (at least 4 characters)"
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Password-protect the full PDF")
+            .setMessage("This creates a separate encrypted copy. Your original PDF will not be changed.")
+            .setView(passwordInput)
+            .setPositiveButton("Protect") { _, _ ->
+                val password = passwordInput.text.toString()
+                if (password.length < 4) {
+                    Toast.makeText(this, "Use at least 4 characters.", Toast.LENGTH_LONG).show()
+                    return@setPositiveButton
+                }
+                renderExecutor.execute {
+                    var loaded: PDDocument? = null
+                    try {
+                        PDFBoxResourceLoader.init(applicationContext)
+                        val uri = currentUri ?: throw Exception("PDF location is unavailable")
+                        val input = contentResolver.openInputStream(uri) ?: throw Exception("Cannot read original PDF")
+                        input.use { loaded = PDDocument.load(it) }
+                        val document = loaded ?: throw Exception("Cannot open PDF")
+                        val permissions = AccessPermission()
+                        val policy = StandardProtectionPolicy(
+                            java.util.UUID.randomUUID().toString(), password, permissions
+                        )
+                        policy.encryptionKeyLength = 128
+                        document.protect(policy)
+                        val output = File(cacheDir, "FileFlow-protected-document.pdf")
+                        document.save(output)
+                        document.close()
+                        loaded = null
+                        mainHandler.post {
+                            if (destroyed) {
+                                output.delete()
+                            } else {
+                                pendingExportFile = output
+                                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                                    addCategory(Intent.CATEGORY_OPENABLE)
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_TITLE, "FileFlow-protected-document.pdf")
+                                }
+                                startActivityForResult(intent, exportRequestCode)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        loaded?.close()
+                        mainHandler.post {
+                            Toast.makeText(
+                                this,
+                                "Could not protect this PDF: ${e.message ?: "unsupported PDF"}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun exportCurrentPage(protect: Boolean) {
