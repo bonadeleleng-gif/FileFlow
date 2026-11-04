@@ -40,6 +40,15 @@ class PdfViewerActivity : Activity() {
     private lateinit var sepiaButton: TextView
     private lateinit var fitButton: TextView
     private lateinit var rotateButton: TextView
+    private lateinit var scrollButton: TextView
+    private lateinit var spreadButton: TextView
+    private lateinit var rootLayout: LinearLayout
+    private lateinit var imageContainer: LinearLayout
+    private var readerContainer: View? = null
+    private var continuousMode = false
+    private var twoPageMode = false
+    private val continuousPageViews = mutableListOf<ZoomableImageView>()
+    private val renderingPages = mutableSetOf<Int>()
     private var sepiaEnabled = false
     private var fitWidthEnabled = false
     private var orientationLocked = false
@@ -87,7 +96,7 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun createViewerInterface() {
-        val root = LinearLayout(this).apply {
+        rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(backgroundColor)
             setPadding(dp(6), dp(3), dp(6), dp(2))
@@ -134,7 +143,7 @@ class PdfViewerActivity : Activity() {
             changePage(direction)
         }
 
-        val imageContainer = LinearLayout(this).apply {
+        imageContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             background = roundedBackground(panelColor, 8)
@@ -167,6 +176,8 @@ class PdfViewerActivity : Activity() {
         sepiaButton = createControlButton("Sepia")
         fitButton = createControlButton("Fit width")
         rotateButton = createControlButton("Auto rotate")
+        scrollButton = createControlButton("Continuous")
+        spreadButton = createControlButton("Two pages")
 
         sepiaButton.setOnClickListener {
             sepiaEnabled = !sepiaEnabled
@@ -190,6 +201,22 @@ class PdfViewerActivity : Activity() {
             rotateButton.text = if (orientationLocked) "Unlock rotate" else "Auto rotate"
         }
 
+        scrollButton.setOnClickListener {
+            continuousMode = !continuousMode
+            if (!continuousMode) twoPageMode = false
+            scrollButton.text = if (continuousMode) "Paged" else "Continuous"
+            spreadButton.isEnabled = continuousMode
+            spreadButton.alpha = if (continuousMode) 1f else 0.55f
+            switchReaderContainer()
+        }
+
+        spreadButton.setOnClickListener {
+            if (!continuousMode) return@setOnClickListener
+            twoPageMode = !twoPageMode
+            spreadButton.text = if (twoPageMode) "One page" else "Two pages"
+            switchReaderContainer()
+        }
+
         controlsRow.addView(sepiaButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
             marginEnd = dp(4)
         })
@@ -198,18 +225,166 @@ class PdfViewerActivity : Activity() {
             marginEnd = dp(4)
         })
         controlsRow.addView(rotateButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(4)
+            marginStart = dp(3)
         })
+        controlsRow.addView(scrollButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginStart = dp(3)
+        })
+        controlsRow.addView(spreadButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginStart = dp(3)
+        })
+        spreadButton.isEnabled = false
+        spreadButton.alpha = 0.55f
 
-        root.addView(controlsRow, LinearLayout.LayoutParams(
+        rootLayout.addView(controlsRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(39)
         ))
 
-        root.addView(imageContainer, LinearLayout.LayoutParams(
+        readerContainer = imageContainer
+        rootLayout.addView(imageContainer, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 
-        setContentView(root)
+        setContentView(rootLayout)
+    }
+
+    private fun switchReaderContainer() {
+        readerContainer?.let { rootLayout.removeView(it) }
+        continuousPageViews.clear()
+        renderingPages.clear()
+
+        val next: View = if (continuousMode) buildContinuousReader() else imageContainer
+        readerContainer = next
+        rootLayout.addView(next, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+        ))
+    }
+
+    private fun buildContinuousReader(): ScrollView {
+        val scroll = ScrollView(this).apply {
+            fillViewport = false
+            isSmoothScrollingEnabled = true
+            setBackgroundColor(panelColor)
+        }
+        val pages = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(5), dp(4), dp(5))
+        }
+        val total = renderer?.pageCount ?: 0
+        val ratios = (0 until total).map { index ->
+            synchronized(rendererLock) {
+                val pdf = renderer ?: return@synchronized 1f
+                val page = pdf.openPage(index)
+                try { page.height.toFloat() / page.width.toFloat() }
+                finally { page.close() }
+            }
+        }
+
+        var index = 0
+        while (index < total) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.TOP
+            }
+            val count = if (twoPageMode && index + 1 < total) 2 else 1
+            repeat(count) {
+                val pageIndex = index + it
+                val image = ZoomableImageView(this) { direction ->
+                    if (!continuousMode) changePage(direction)
+                }.apply {
+                    setSwipeNavigationEnabled(false)
+                    setBackgroundColor(Color.WHITE)
+                    scaleType = ImageView.ScaleType.MATRIX
+                }
+                continuousPageViews.add(image)
+                val availableWidth = resources.displayMetrics.widthPixels -
+                    dp(20) - if (count == 2) dp(12) else 0
+                val pageWidth = if (count == 2) availableWidth / 2 else availableWidth
+                val pageHeight = (pageWidth * ratios[pageIndex]).toInt().coerceAtLeast(dp(180))
+                row.addView(image, LinearLayout.LayoutParams(
+                    0, pageHeight, 1f
+                ).apply {
+                    if (count == 2 && it == 0) marginEnd = dp(3)
+                    if (count == 2 && it == 1) marginStart = dp(3)
+                })
+            }
+            pages.addView(row, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) })
+            index += count
+        }
+        scroll.addView(pages)
+        scroll.setOnScrollChangeListener { _, _, _, _, _ -> renderVisibleContinuousPages(scroll) }
+        pages.post { renderVisibleContinuousPages(scroll) }
+        return scroll
+    }
+
+    private fun renderVisibleContinuousPages(scroll: ScrollView) {
+        if (!continuousMode || destroyed) return
+        val viewport = IntArray(2)
+        scroll.getLocationOnScreen(viewport)
+        val top = viewport[1] - dp(250)
+        val bottom = viewport[1] + scroll.height + dp(250)
+        var firstVisible = -1
+
+        continuousPageViews.forEachIndexed { index, image ->
+            val location = IntArray(2)
+            image.getLocationOnScreen(location)
+            val visible = location[1] + image.height >= top && location[1] <= bottom
+            if (visible && firstVisible == -1) firstVisible = index
+            if (visible && image.drawable == null) renderContinuousPage(index, image)
+            if (!visible && image.drawable != null) {
+                val drawable = image.drawable
+                image.setImageDrawable(null)
+                if (drawable is android.graphics.drawable.BitmapDrawable) {
+                    drawable.bitmap?.let { if (!it.isRecycled) it.recycle() }
+                }
+            }
+        }
+        if (firstVisible >= 0) {
+            currentPage = firstVisible
+            updateCounter()
+        }
+    }
+
+    private fun renderContinuousPage(index: Int, image: ZoomableImageView) {
+        if (!renderingPages.add(index)) return
+        renderExecutor.execute {
+            var bitmap: Bitmap? = null
+            try {
+                bitmap = renderBitmap(index, (image.width.takeIf { it > 0 }
+                    ?: resources.displayMetrics.widthPixels).coerceIn(500, 1800))
+                mainHandler.post {
+                    renderingPages.remove(index)
+                    if (!destroyed && continuousMode && image.parent != null && bitmap != null) {
+                        image.displayBitmap(bitmap)
+                        (readerContainer as? ScrollView)?.let { renderVisibleContinuousPages(it) }
+                    } else {
+                        bitmap?.recycle()
+                    }
+                }
+            } catch (_: Exception) {
+                mainHandler.post { renderingPages.remove(index) }
+            }
+        }
+    }
+
+    private fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? {
+        return synchronized(rendererLock) {
+            val pdf = renderer ?: return@synchronized null
+            if (pageIndex !in 0 until pdf.pageCount) return@synchronized null
+            val page = pdf.openPage(pageIndex)
+            try {
+                val width = targetWidth.coerceIn(500, 1800)
+                val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
+                val result = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                Canvas(result).drawColor(Color.WHITE)
+                page.render(result, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                result
+            } finally {
+                page.close()
+            }
+        }
     }
 
     private fun createControlButton(label: String): TextView {
@@ -347,6 +522,7 @@ class PdfViewerActivity : Activity() {
         private var baseScale = 1f
         private var currentScale = 1f
         private var fitWidthMode = false
+        private var swipeNavigationEnabled = true
 
         private var startX = 0f
         private var startY = 0f
@@ -424,6 +600,10 @@ class PdfViewerActivity : Activity() {
         fun setFitWidth(enabled: Boolean) {
             fitWidthMode = enabled
             fitImage()
+        }
+
+        fun setSwipeNavigationEnabled(enabled: Boolean) {
+            swipeNavigationEnabled = enabled
         }
 
         override fun onSizeChanged(
@@ -528,7 +708,7 @@ class PdfViewerActivity : Activity() {
                     val longEnough = abs(dy) > swipeThreshold
                     val fastEnough = abs(velocityY) > minimumVelocity
 
-                    if (!multiTouch &&
+                    if (swipeNavigationEnabled && !multiTouch &&
                         currentScale <= baseScale * 1.01f &&
                         verticalSwipe &&
                         (longEnough || fastEnough)
