@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: fileflow-apk-build
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
