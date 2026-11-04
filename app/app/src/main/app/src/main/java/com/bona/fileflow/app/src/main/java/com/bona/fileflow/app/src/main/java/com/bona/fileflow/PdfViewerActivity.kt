@@ -1,4 +1,5 @@
 
+
 package com.bona.fileflow
 
 import android.app.Activity
@@ -8,12 +9,11 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Typeface
-import android.graphics.pdf.PdfRenderer
 import android.graphics.drawable.GradientDrawable
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
 import android.os.ParcelFileDescriptor
-import android.view.GestureDetector
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -35,17 +35,14 @@ class PdfViewerActivity : Activity() {
     private lateinit var previousButton: TextView
     private lateinit var nextButton: TextView
 
-    private val background = Color.rgb(13, 15, 25)
-    private val surface = Color.rgb(29, 32, 46)
-    private val purple = Color.rgb(135, 100, 255)
+    private val background = Color.rgb(12, 14, 25)
+    private val surface = Color.rgb(27, 30, 47)
+    private val purple = Color.rgb(139, 105, 255)
     private val white = Color.WHITE
-    private val muted = Color.rgb(170, 174, 190)
+    private val muted = Color.rgb(165, 169, 190)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        window.statusBarColor = background
-        window.navigationBarColor = background
 
         val uri: Uri? = intent.getParcelableExtra("pdf_uri")
 
@@ -55,8 +52,7 @@ class PdfViewerActivity : Activity() {
         }
 
         try {
-            fileDescriptor =
-                contentResolver.openFileDescriptor(uri, "r")
+            fileDescriptor = contentResolver.openFileDescriptor(uri, "r")
 
             if (fileDescriptor == null) {
                 finish()
@@ -64,7 +60,6 @@ class PdfViewerActivity : Activity() {
             }
 
             renderer = PdfRenderer(fileDescriptor!!)
-
             createInterface()
             renderPage()
 
@@ -79,67 +74,71 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun createInterface() {
-
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(background)
+            setPadding(18, 12, 18, 12)
         }
 
-        val toolbar = LinearLayout(this).apply {
+        // Top header
+        val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(20, 18, 20, 18)
-            setBackgroundColor(background)
+            setPadding(4, 12, 4, 20)
         }
 
-        val appTitle = TextView(this).apply {
+        val brand = TextView(this).apply {
             text = "FileFlow"
-            textSize = 24f
+            textSize = 25f
             setTextColor(purple)
-            typeface = Typeface.create(
-                "sans-serif",
-                Typeface.BOLD
-            )
+            typeface = Typeface.DEFAULT_BOLD
         }
 
         val subtitle = TextView(this).apply {
-            text = "PDF READER"
-            textSize = 10f
+            text = "  /  READER"
+            textSize = 11f
             setTextColor(muted)
-            letterSpacing = 0.12f
-            setPadding(10, 5, 0, 0)
+            typeface = Typeface.DEFAULT_BOLD
         }
 
-        val titleGroup = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(appTitle)
-            addView(subtitle)
+        header.addView(brand)
+        header.addView(subtitle)
+        root.addView(header)
+
+        // Page information
+        val infoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(2, 0, 2, 14)
         }
 
-        val spacer = View(this)
+        val readingTitle = TextView(this).apply {
+            text = "Reading document"
+            textSize = 15f
+            setTextColor(white)
+            typeface = Typeface.DEFAULT_BOLD
+        }
 
         pageLabel = TextView(this).apply {
-            text = "Page 1"
-            textSize = 13f
+            text = "PAGE 1"
+            textSize = 11f
             setTextColor(white)
-            setPadding(14, 9, 14, 9)
-            background = roundedBackground(surface, 18f)
+            gravity = Gravity.CENTER
+            setPadding(14, 8, 14, 8)
+            background = roundedBackground(surface, 30f)
         }
 
-        toolbar.addView(titleGroup)
-
-        toolbar.addView(
-            spacer,
-            LinearLayout.LayoutParams(0, 1, 1f)
+        infoRow.addView(
+            readingTitle,
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         )
+        infoRow.addView(pageLabel)
+        root.addView(infoRow)
 
-        toolbar.addView(pageLabel)
-
+        // Document viewing area
         imageView = ZoomableImageView(this).apply {
-            setBackgroundColor(Color.rgb(39, 42, 54))
+            setBackgroundColor(Color.rgb(38, 41, 57))
         }
-
-        root.addView(toolbar)
 
         root.addView(
             imageView,
@@ -147,26 +146,30 @@ class PdfViewerActivity : Activity() {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
                 1f
-            )
+            ).apply {
+                setMargins(0, 0, 0, 18)
+            }
         )
 
+        // Bottom navigation
         val navigation = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(16, 12, 16, 20)
-            setBackgroundColor(background)
+            setPadding(0, 4, 0, 4)
         }
 
-        previousButton = controlButton("‹  Previous") {
+        previousButton = navigationButton("‹   Previous")
+        nextButton = navigationButton("Next   ›")
+
+        previousButton.setOnClickListener {
             if (currentPage > 0) {
                 currentPage--
                 renderPage()
             }
         }
 
-        nextButton = controlButton("Next  ›") {
+        nextButton.setOnClickListener {
             val count = renderer?.pageCount ?: 0
-
             if (currentPage < count - 1) {
                 currentPage++
                 renderPage()
@@ -175,46 +178,47 @@ class PdfViewerActivity : Activity() {
 
         navigation.addView(
             previousButton,
-            LinearLayout.LayoutParams(0, 52, 1f).apply {
-                setMargins(4, 0, 8, 0)
+            LinearLayout.LayoutParams(0, 54, 1f).apply {
+                setMargins(0, 0, 7, 0)
             }
         )
 
         navigation.addView(
             nextButton,
-            LinearLayout.LayoutParams(0, 52, 1f).apply {
-                setMargins(8, 0, 4, 0)
+            LinearLayout.LayoutParams(0, 54, 1f).apply {
+                setMargins(7, 0, 0, 0)
             }
         )
 
         root.addView(navigation)
 
+        val hint = TextView(this).apply {
+            text = "PINCH TO ZOOM  •  DRAG TO MOVE"
+            textSize = 10f
+            setTextColor(muted)
+            gravity = Gravity.CENTER
+            setPadding(0, 12, 0, 4)
+            letterSpacing = 0.12f
+        }
+
+        root.addView(hint)
         setContentView(root)
     }
 
-    private fun controlButton(
-        label: String,
-        action: () -> Unit
-    ): TextView {
-
+    private fun navigationButton(label: String): TextView {
         return TextView(this).apply {
             text = label
-            textSize = 15f
+            textSize = 14f
             setTextColor(white)
             gravity = Gravity.CENTER
-            setPadding(18, 10, 18, 10)
-            background = roundedBackground(surface, 14f)
+            typeface = Typeface.DEFAULT_BOLD
+            background = roundedBackground(surface, 16f)
             isClickable = true
             isFocusable = true
-            setOnClickListener { action() }
         }
     }
 
-    private fun roundedBackground(
-        color: Int,
-        radius: Float
-    ): GradientDrawable {
-
+    private fun roundedBackground(color: Int, radius: Float): GradientDrawable {
         return GradientDrawable().apply {
             setColor(color)
             cornerRadius = radius
@@ -222,30 +226,20 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun renderPage() {
-
         val pdf = renderer ?: return
 
-        if (currentPage !in 0 until pdf.pageCount) {
-            return
-        }
+        if (currentPage !in 0 until pdf.pageCount) return
 
         val page = pdf.openPage(currentPage)
 
         try {
-            val scale = minOf(
-                2.5f,
-                1800f / page.width.toFloat()
-            )
-
-            val bitmapWidth =
-                (page.width * scale).toInt().coerceAtLeast(1)
-
-            val bitmapHeight =
-                (page.height * scale).toInt().coerceAtLeast(1)
+            val scale = minOf(2.5f, 1800f / page.width)
+            val width = (page.width * scale).toInt().coerceAtLeast(1)
+            val height = (page.height * scale).toInt().coerceAtLeast(1)
 
             val bitmap = Bitmap.createBitmap(
-                bitmapWidth,
-                bitmapHeight,
+                width,
+                height,
                 Bitmap.Config.ARGB_8888
             )
 
@@ -261,14 +255,13 @@ class PdfViewerActivity : Activity() {
             imageView.setImageBitmap(bitmap)
             imageView.resetZoom()
 
-            pageLabel.text =
-                "Page ${currentPage + 1} / ${pdf.pageCount}"
+            pageLabel.text = "PAGE ${currentPage + 1} / ${pdf.pageCount}"
 
-            previousButton.alpha =
-                if (currentPage > 0) 1f else 0.4f
+            previousButton.isEnabled = currentPage > 0
+            nextButton.isEnabled = currentPage < pdf.pageCount - 1
 
-            nextButton.alpha =
-                if (currentPage < pdf.pageCount - 1) 1f else 0.4f
+            previousButton.alpha = if (currentPage > 0) 1f else 0.4f
+            nextButton.alpha = if (currentPage < pdf.pageCount - 1) 1f else 0.4f
 
         } finally {
             page.close()
@@ -277,22 +270,16 @@ class PdfViewerActivity : Activity() {
 
     override fun onDestroy() {
         super.onDestroy()
-
         renderer?.close()
-        renderer = null
-
         fileDescriptor?.close()
-        fileDescriptor = null
     }
 }
 
-class ZoomableImageView(
-    context: Context
-) : ImageView(context) {
+class ZoomableImageView(context: Context) : ImageView(context) {
 
     private val imageMatrixValues = Matrix()
-
-    private var currentScale = 1f
+    private var currentZoom = 1f
+    private var baseScale = 1f
     private var lastX = 0f
     private var lastY = 0f
 
@@ -300,42 +287,23 @@ class ZoomableImageView(
         context,
         object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
 
-            override fun onScale(
-                detector: ScaleGestureDetector
-            ): Boolean {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val newZoom = (currentZoom * detector.scaleFactor)
+                    .coerceIn(1f, 5f)
 
-                val desiredScale =
-                    currentScale * detector.scaleFactor
+                val factor = newZoom / currentZoom
 
-                val newScale = desiredScale.coerceIn(1f, 5f)
+                if (factor != 1f) {
+                    imageMatrixValues.postScale(
+                        factor,
+                        factor,
+                        detector.focusX,
+                        detector.focusY
+                    )
 
-                val factor = newScale / currentScale
-
-                imageMatrixValues.postScale(
-                    factor,
-                    factor,
-                    detector.focusX,
-                    detector.focusY
-                )
-
-                currentScale = newScale
-                imageMatrix = imageMatrixValues
-
-                return true
-            }
-        }
-    )
-
-    private val gestureDetector = GestureDetector(
-        context,
-        object : GestureDetector.SimpleOnGestureListener() {
-
-            override fun onDoubleTap(e: MotionEvent): Boolean {
-
-                if (currentScale > 1f) {
-                    fitImage()
-                } else {
-                    zoomTo(2.5f, e.x, e.y)
+                    currentZoom = newZoom
+                    clampImagePosition()
+                    imageMatrix = imageMatrixValues
                 }
 
                 return true
@@ -346,26 +314,6 @@ class ZoomableImageView(
     init {
         scaleType = ScaleType.MATRIX
         isClickable = true
-        isFocusable = true
-    }
-
-    private fun zoomTo(
-        targetScale: Float,
-        x: Float,
-        y: Float
-    ) {
-        val newScale = targetScale.coerceIn(1f, 5f)
-        val factor = newScale / currentScale
-
-        imageMatrixValues.postScale(
-            factor,
-            factor,
-            x,
-            y
-        )
-
-        currentScale = newScale
-        imageMatrix = imageMatrixValues
     }
 
     fun resetZoom() {
@@ -375,30 +323,79 @@ class ZoomableImageView(
     }
 
     private fun fitImage() {
+        val drawable = drawable ?: return
 
-        val image = drawable ?: return
+        val imageWidth = drawable.intrinsicWidth.toFloat()
+        val imageHeight = drawable.intrinsicHeight.toFloat()
 
-        if (width <= 0 || height <= 0) return
+        if (imageWidth <= 0f || imageHeight <= 0f ||
+            width <= 0 || height <= 0
+        ) return
 
-        val imageWidth = image.intrinsicWidth.toFloat()
-        val imageHeight = image.intrinsicHeight.toFloat()
-
-        if (imageWidth <= 0 || imageHeight <= 0) return
-
-        val scale = minOf(
+        baseScale = minOf(
             width.toFloat() / imageWidth,
             height.toFloat() / imageHeight
         )
 
-        val left = (width - imageWidth * scale) / 2f
-        val top = (height - imageHeight * scale) / 2f
+        val left = (width - imageWidth * baseScale) / 2f
+        val top = (height - imageHeight * baseScale) / 2f
 
-        imageMatrixValues.reset()
-        imageMatrixValues.setScale(scale, scale)
-        imageMatrixValues.postTranslate(left, top)
+        imageMatrixValues.setValues(
+            floatArrayOf(
+                baseScale, 0f, left,
+                0f, baseScale, top,
+                0f, 0f, 1f
+            )
+        )
 
-        currentScale = 1f
+        currentZoom = 1f
         imageMatrix = imageMatrixValues
+    }
+
+    private fun clampImagePosition() {
+        val drawable = drawable ?: return
+
+        val values = FloatArray(9)
+        imageMatrixValues.getValues(values)
+
+        val scale = values[Matrix.MSCALE_X]
+        val scaledWidth = drawable.intrinsicWidth * scale
+        val scaledHeight = drawable.intrinsicHeight * scale
+
+        val minX = if (scaledWidth <= width) {
+            (width - scaledWidth) / 2f
+        } else {
+            width - scaledWidth
+        }
+
+        val maxX = if (scaledWidth <= width) {
+            minX
+        } else {
+            0f
+        }
+
+        val minY = if (scaledHeight <= height) {
+            (height - scaledHeight) / 2f
+        } else {
+            height - scaledHeight
+        }
+
+        val maxY = if (scaledHeight <= height) {
+            minY
+        } else {
+            0f
+        }
+
+        val correctedX = values[Matrix.MTRANS_X].coerceIn(minX, maxX)
+        val correctedY = values[Matrix.MTRANS_Y].coerceIn(minY, maxY)
+
+        imageMatrixValues.setValues(
+            floatArrayOf(
+                scale, 0f, correctedX,
+                0f, scale, correctedY,
+                0f, 0f, 1f
+            )
+        )
     }
 
     override fun onSizeChanged(
@@ -408,15 +405,10 @@ class ZoomableImageView(
         oldh: Int
     ) {
         super.onSizeChanged(w, h, oldw, oldh)
-
-        if (w > 0 && h > 0) {
-            fitImage()
-        }
+        fitImage()
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-
-        gestureDetector.onTouchEvent(event)
         scaleDetector.onTouchEvent(event)
 
         when (event.actionMasked) {
@@ -424,25 +416,26 @@ class ZoomableImageView(
             MotionEvent.ACTION_DOWN -> {
                 lastX = event.x
                 lastY = event.y
+                parent?.requestDisallowInterceptTouchEvent(true)
                 return true
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
-                lastX = 0f
-                lastY = 0f
+                lastX = event.getX(0)
+                lastY = event.getY(0)
                 return true
             }
 
             MotionEvent.ACTION_MOVE -> {
-
                 if (!scaleDetector.isInProgress &&
                     event.pointerCount == 1 &&
-                    currentScale > 1f
+                    currentZoom > 1.01f
                 ) {
                     val dx = event.x - lastX
                     val dy = event.y - lastY
 
                     imageMatrixValues.postTranslate(dx, dy)
+                    clampImagePosition()
                     imageMatrix = imageMatrixValues
                 }
 
@@ -455,8 +448,7 @@ class ZoomableImageView(
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
-                val remainingIndex =
-                    if (event.actionIndex == 0) 1 else 0
+                val remainingIndex = if (event.actionIndex == 0) 1 else 0
 
                 if (remainingIndex < event.pointerCount) {
                     lastX = event.getX(remainingIndex)
@@ -468,6 +460,7 @@ class ZoomableImageView(
 
             MotionEvent.ACTION_UP,
             MotionEvent.ACTION_CANCEL -> {
+                parent?.requestDisallowInterceptTouchEvent(false)
                 performClick()
                 return true
             }
