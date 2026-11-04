@@ -659,7 +659,7 @@ class PdfViewerActivity : Activity() {
 
     private fun buildContinuousReader(): ScrollView {
         val scroll = ScrollView(this).apply {
-            fillViewport = false
+            isFillViewport = false
             isSmoothScrollingEnabled = true
             setBackgroundColor(panelColor)
         }
