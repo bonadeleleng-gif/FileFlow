@@ -17,6 +17,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.HorizontalScrollView
 import android.widget.PopupMenu
 import java.io.File
 import java.security.MessageDigest
@@ -243,7 +244,12 @@ class MainActivity : ComponentActivity() {
         root.addView(searchField, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
-        root.addView(tabs)
+        val tabsScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(tabs)
+        }
+
+        root.addView(tabsScroll)
         root.addView(sectionHeader)
         root.addView(scroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
@@ -679,6 +685,18 @@ class MainActivity : ComponentActivity() {
                 ))
             }
         } catch (_: Exception) { }
+        var hashesChanged = false
+        documents.indices.forEach { index ->
+            val item = documents[index]
+            if (item.contentHash.isBlank() && !item.isPrivate && !item.isDeleted) {
+                val hash = calculateHash(Uri.parse(item.uri))
+                if (hash.isNotBlank()) {
+                    documents[index] = item.copy(contentHash = hash)
+                    hashesChanged = true
+                }
+            }
+        }
+        if (hashesChanged) saveDocuments()
     }
 
     private fun saveDocuments() {
