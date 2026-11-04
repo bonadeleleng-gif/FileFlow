@@ -18,6 +18,7 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.VelocityTracker
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -50,6 +51,9 @@ class PdfViewerActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        window.statusBarColor = backgroundColor
+        window.navigationBarColor = backgroundColor
 
         createViewerInterface()
 
@@ -86,24 +90,25 @@ class PdfViewerActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(backgroundColor)
-            setPadding(dp(20), dp(18), dp(20), dp(18))
+            setPadding(dp(8), dp(4), dp(8), dp(2))
         }
 
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
         }
 
         val brand = TextView(this).apply {
             text = "FileFlow"
-            textSize = 23f
+            textSize = 19f
             setTextColor(purpleColor)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
         }
 
         val readerLabel = TextView(this).apply {
             text = "  /  READER"
-            textSize = 12f
+            textSize = 10f
             setTextColor(mutedColor)
             letterSpacing = 0.12f
         }
@@ -111,31 +116,23 @@ class PdfViewerActivity : Activity() {
         header.addView(brand)
         header.addView(readerLabel)
 
-        val readingLabel = TextView(this).apply {
-            text = "Reading document"
-            textSize = 18f
-            setTextColor(Color.WHITE)
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
-            setPadding(0, dp(25), 0, dp(12))
-        }
-
         pageCounter = TextView(this).apply {
             text = "PAGE 1 / 1"
-            textSize = 11f
-            letterSpacing = 0.08f
+            textSize = 10f
+            letterSpacing = 0.06f
             setTextColor(purpleColor)
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(9), dp(14), dp(9))
-            background = roundedBackground(panelColor, 30)
+            setPadding(dp(10), dp(5), dp(10), dp(5))
+            background = roundedBackground(panelColor, 20)
         }
 
-        val counterContainer = LinearLayout(this).apply {
+        val counterRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(14))
+            setPadding(dp(4), dp(2), dp(4), dp(5))
         }
 
-        counterContainer.addView(pageCounter)
+        counterRow.addView(pageCounter)
 
         pageImage = ZoomableImageView(this) { direction ->
             changePage(direction)
@@ -146,9 +143,9 @@ class PdfViewerActivity : Activity() {
         val imageContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            background = roundedBackground(panelColor, 18)
+            background = roundedBackground(panelColor, 10)
             clipToOutline = true
-            setPadding(dp(5), dp(5), dp(5), dp(5))
+            setPadding(dp(2), dp(2), dp(2), dp(2))
         }
 
         imageContainer.addView(
@@ -159,18 +156,21 @@ class PdfViewerActivity : Activity() {
             )
         )
 
-        val gestureHint = TextView(this).apply {
-            text = "SWIPE TO TURN PAGES  •  PINCH TO ZOOM"
-            textSize = 10f
-            letterSpacing = 0.08f
-            setTextColor(mutedColor)
-            gravity = Gravity.CENTER
-            setPadding(0, dp(18), 0, dp(10))
-        }
+        root.addView(
+            header,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(29)
+            )
+        )
 
-        root.addView(header)
-        root.addView(readingLabel)
-        root.addView(counterContainer)
+        root.addView(
+            counterRow,
+            LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(30)
+            )
+        )
 
         root.addView(
             imageContainer,
@@ -181,23 +181,19 @@ class PdfViewerActivity : Activity() {
             )
         )
 
-        root.addView(gestureHint)
-
         setContentView(root)
     }
 
     private fun changePage(direction: Int) {
 
         val totalPages = renderer?.pageCount ?: return
-
         val newPage = currentPage - direction
 
         if (newPage !in 0 until totalPages) return
 
         currentPage = newPage
 
-        pageCounter.text =
-            "PAGE ${currentPage + 1} / $totalPages"
+        pageCounter.text = "PAGE ${currentPage + 1} / $totalPages"
 
         renderPage()
     }
@@ -340,9 +336,7 @@ class PdfViewerActivity : Activity() {
             context,
             object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
 
-                override fun onScale(
-                    detector: ScaleGestureDetector
-                ): Boolean {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
 
                     val newScale = (
                         currentScale * detector.scaleFactor
@@ -358,7 +352,6 @@ class PdfViewerActivity : Activity() {
                     )
 
                     currentScale = newScale
-
                     clampImage()
                     imageMatrix = imageMatrixValue
 
@@ -404,19 +397,20 @@ class PdfViewerActivity : Activity() {
                 width <= 0 || height <= 0
             ) return
 
-            // Fit the page to the available screen width.
-            // Taller pages can be moved vertically.
-            baseScale = width.toFloat() / imageWidth
+            // Fill the available reading area.
+            // The page is scaled to fit both width and height.
+            baseScale = minOf(
+                width.toFloat() / imageWidth,
+                height.toFloat() / imageHeight
+            )
+
             currentScale = baseScale
 
+            val scaledWidth = imageWidth * baseScale
             val scaledHeight = imageHeight * baseScale
 
-            val x = 0f
-            val y = if (scaledHeight < height) {
-                (height - scaledHeight) / 2f
-            } else {
-                0f
-            }
+            val x = (width - scaledWidth) / 2f
+            val y = (height - scaledHeight) / 2f
 
             imageMatrixValue.reset()
             imageMatrixValue.setScale(baseScale, baseScale)
@@ -432,7 +426,6 @@ class PdfViewerActivity : Activity() {
                 MotionEvent.ACTION_DOWN -> {
                     velocityTracker?.recycle()
                     velocityTracker = VelocityTracker.obtain()
-
                     velocityTracker?.addMovement(event)
 
                     startX = event.x
@@ -441,7 +434,6 @@ class PdfViewerActivity : Activity() {
                     lastY = event.y
 
                     hadMultiplePointers = false
-
                     scaleDetector.onTouchEvent(event)
 
                     return true
@@ -462,7 +454,6 @@ class PdfViewerActivity : Activity() {
                     if (!scaleDetector.isInProgress &&
                         event.pointerCount == 1
                     ) {
-
                         val dx = event.x - lastX
                         val dy = event.y - lastY
 
@@ -521,20 +512,17 @@ class PdfViewerActivity : Activity() {
                         horizontalSwipe &&
                         (longEnough || fastEnough)
                     ) {
-
                         if (dx < 0 || velocityX < -minimumSwipeVelocity) {
                             onPageSwipe(-1)
                         } else {
                             onPageSwipe(1)
                         }
-
                     } else {
                         performClick()
                     }
 
                     velocityTracker?.recycle()
                     velocityTracker = null
-
                     scaleDetector.onTouchEvent(event)
 
                     return true
