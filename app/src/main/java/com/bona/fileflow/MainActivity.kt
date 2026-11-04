@@ -5,6 +5,9 @@ import androidx.core.content.FileProvider
 import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.BitmapFactory
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
@@ -57,6 +60,8 @@ class MainActivity : ComponentActivity() {
     private val lightPanel = Color.WHITE
 
     private val openDocumentRequestCode = 4101
+    private val convertPdfRequestCode = 4102
+    private var pendingConvertedFile: File? = null
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -69,6 +74,22 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) { }
             addDocument(uri)
             openDocumentItem(uri.toString())
+        } else if (requestCode == convertPdfRequestCode && resultCode == RESULT_OK) {
+            val destination = data?.data
+            val source = pendingConvertedFile
+            if (destination != null && source != null) {
+                try {
+                    contentResolver.openOutputStream(destination)?.use { output ->
+                        source.inputStream().use { input -> input.copyTo(output) }
+                    }
+                    Toast.makeText(this, "PDF created successfully.", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "PDF conversion failed: ${e.message}", Toast.LENGTH_LONG).show()
+                } finally {
+                    source.delete()
+                    pendingConvertedFile = null
+                }
+            }
         }
     }
 
@@ -398,6 +419,7 @@ class MainActivity : ComponentActivity() {
     private fun showDocumentMenu(anchor: View, item: DocumentItem) {
         val menu = PopupMenu(this, anchor)
         menu.menu.add("Share")
+        if (!item.name.endsWith(".pdf", true)) menu.menu.add("Convert to PDF")
         if (!item.isPrivate && !item.isDeleted) menu.menu.add("Move to private folder")
         if (item.isDeleted) {
             menu.menu.add("Restore")
@@ -408,6 +430,7 @@ class MainActivity : ComponentActivity() {
         menu.setOnMenuItemClickListener {
             when (it.title.toString()) {
                 "Share" -> shareDocument(item)
+                "Convert to PDF" -> convertDocumentToPdf(item)
                 "Move to private folder" -> moveToPrivateFolder(item)
                 "Move to recently deleted" -> moveToTrash(item)
                 "Restore" -> updateItem(item) { copy(isDeleted = false) }
@@ -438,6 +461,81 @@ class MainActivity : ComponentActivity() {
         saveDocuments()
         renderDocuments()
         Toast.makeText(this, "Removed from FileFlow", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun convertDocumentToPdf(item: DocumentItem) {
+        val extension = item.name.substringAfterLast('.', "").lowercase(Locale.getDefault())
+        if (extension !in listOf("txt", "csv", "png", "jpg", "jpeg", "webp")) {
+            Toast.makeText(
+                this,
+                "This file needs an Office app to export to PDF. Text and image files are supported directly.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        try {
+            val output = File(cacheDir, "FileFlow-${item.name.substringBeforeLast('.')}.pdf")
+            val pdf = PdfDocument()
+            if (extension in listOf("png", "jpg", "jpeg", "webp")) {
+                val bitmap = contentResolver.openInputStream(Uri.parse(item.uri))?.use {
+                    BitmapFactory.decodeStream(it)
+                } ?: throw Exception("Could not read image")
+                val pageWidth = 595
+                val pageHeight = 842
+                val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
+                val scale = minOf((pageWidth - 48f) / bitmap.width, (pageHeight - 48f) / bitmap.height)
+                val width = bitmap.width * scale
+                val height = bitmap.height * scale
+                val left = (pageWidth - width) / 2f
+                val top = (pageHeight - height) / 2f
+                page.canvas.drawBitmap(bitmap, null, android.graphics.RectF(left, top, left + width, top + height), null)
+                pdf.finishPage(page)
+                bitmap.recycle()
+            } else {
+                val text = contentResolver.openInputStream(Uri.parse(item.uri))?.bufferedReader()?.use { it.readText() }
+                    ?: throw Exception("Could not read text file")
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.BLACK
+                    textSize = 10f
+                }
+                val pageWidth = 595
+                val pageHeight = 842
+                val margin = 42f
+                val maxWidth = pageWidth - margin * 2
+                val lineHeight = 14f
+                var pageNumber = 1
+                var page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+                var y = margin
+                text.lines().forEach { sourceLine ->
+                    var remaining = sourceLine
+                    if (remaining.isEmpty()) remaining = " "
+                    while (remaining.isNotEmpty()) {
+                        if (y > pageHeight - margin) {
+                            pdf.finishPage(page)
+                            pageNumber++
+                            page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
+                            y = margin
+                        }
+                        val count = paint.breakText(remaining, true, maxWidth, null).coerceAtLeast(1)
+                        page.canvas.drawText(remaining.substring(0, count), margin, y, paint)
+                        remaining = remaining.substring(count)
+                        y += lineHeight
+                    }
+                }
+                pdf.finishPage(page)
+            }
+            output.outputStream().use { pdf.writeTo(it) }
+            pdf.close()
+            pendingConvertedFile = output
+            val saveIntent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_TITLE, "${item.name.substringBeforeLast('.')}.pdf")
+            }
+            startActivityForResult(saveIntent, convertPdfRequestCode)
+        } catch (e: Exception) {
+            Toast.makeText(this, "PDF conversion failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun shareDocument(item: DocumentItem) {
