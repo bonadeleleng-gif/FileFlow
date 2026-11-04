@@ -29,6 +29,7 @@ import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import android.provider.DocumentsContract
 
 class MainActivity : ComponentActivity() {
 
@@ -62,6 +63,7 @@ class MainActivity : ComponentActivity() {
 
     private val openDocumentRequestCode = 4101
     private val convertPdfRequestCode = 4102
+    private val folderRequestCode = 4103
     private var pendingConvertedFile: File? = null
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -75,6 +77,15 @@ class MainActivity : ComponentActivity() {
             } catch (_: Exception) { }
             addDocument(uri)
             openDocumentItem(uri.toString())
+        } else if (requestCode == folderRequestCode && resultCode == RESULT_OK) {
+            val treeUri = data?.data ?: return
+            try {
+                contentResolver.takePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                prefs.edit().putString("library_tree_uri", treeUri.toString()).apply()
+                scanFolder(treeUri)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not access folder: " + e.message, Toast.LENGTH_LONG).show()
+            }
         } else if (requestCode == convertPdfRequestCode && resultCode == RESULT_OK) {
             val destination = data?.data
             val source = pendingConvertedFile
@@ -238,9 +249,22 @@ class MainActivity : ComponentActivity() {
 
         root.addView(header)
         root.addView(subtitle)
-        root.addView(openButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(50)
-        ).apply { bottomMargin = dp(16) })
+        val folderButton = Button(this).apply {
+            text = "Browse folder"
+            isAllCaps = false
+            setOnClickListener {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                }
+                startActivityForResult(intent, folderRequestCode)
+            }
+        }
+        val actionRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
+            addView(folderButton, LinearLayout.LayoutParams(dp(130), dp(48)))
+        }
+        root.addView(actionRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { bottomMargin = dp(14) })
         root.addView(searchField, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
         ))
@@ -354,6 +378,53 @@ class MainActivity : ComponentActivity() {
         return card.apply {
             val outer = LinearLayout(this@MainActivity)
             outer.orientation = LinearLayout.VERTICAL
+        }
+    }
+
+    private fun scanFolder(treeUri: Uri) {
+        var added = 0
+        val seen = mutableSetOf<String>()
+        fun visit(parentId: String, depth: Int) {
+            if (depth > 5 || seen.size >= 500) return
+            val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+            val columns = arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE
+            )
+            contentResolver.query(childUri, columns, null, null, null)?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (cursor.moveToNext() && seen.size < 500) {
+                    val id = cursor.getString(idIndex)
+                    if (!seen.add(id)) continue
+                    val mime = cursor.getString(mimeIndex) ?: "application/octet-stream"
+                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        visit(id, depth + 1)
+                    } else {
+                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                        if (documents.none { it.uri == fileUri.toString() }) {
+                            documents.add(DocumentItem(
+                                fileUri.toString(),
+                                cursor.getString(nameIndex) ?: "Untitled document",
+                                mime,
+                                System.currentTimeMillis(),
+                                false
+                            ))
+                            added++
+                        }
+                    }
+                }
+            }
+        }
+        try {
+            visit(DocumentsContract.getTreeDocumentId(treeUri), 0)
+            saveDocuments()
+            renderDocuments()
+            Toast.makeText(this, added.toString() + " new files added from the selected folder.", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Folder scan failed: " + e.message, Toast.LENGTH_LONG).show()
         }
     }
 
