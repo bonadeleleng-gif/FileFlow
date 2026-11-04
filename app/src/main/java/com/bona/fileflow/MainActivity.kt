@@ -64,7 +64,9 @@ class MainActivity : ComponentActivity() {
     private val openDocumentRequestCode = 4101
     private val convertPdfRequestCode = 4102
     private val folderRequestCode = 4103
+    private val createFileRequestCode = 4104
     private var pendingConvertedFile: File? = null
+    private var pendingCreatedFile: File? = null
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -85,6 +87,18 @@ class MainActivity : ComponentActivity() {
                 scanFolder(treeUri)
             } catch (e: Exception) {
                 Toast.makeText(this, "Could not access folder: " + e.message, Toast.LENGTH_LONG).show()
+            }
+        } else if (requestCode == createFileRequestCode && resultCode == RESULT_OK) {
+            val target = data?.data
+            val source = pendingCreatedFile
+            if (target != null && source != null) {
+                try {
+                    contentResolver.openOutputStream(target)?.use { out -> source.inputStream().use { it.copyTo(out) } }
+                    addDocument(target)
+                    Toast.makeText(this, "File saved.", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Could not save: " + e.message, Toast.LENGTH_LONG).show()
+                } finally { source.delete(); pendingCreatedFile = null }
             }
         } else if (requestCode == convertPdfRequestCode && resultCode == RESULT_OK) {
             val destination = data?.data
@@ -259,10 +273,12 @@ class MainActivity : ComponentActivity() {
                 startActivityForResult(intent, folderRequestCode)
             }
         }
+        val createButton = Button(this).apply { text = "Create"; isAllCaps = false; setOnClickListener { showCreateFileDialog() } }
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(8) })
-            addView(folderButton, LinearLayout.LayoutParams(dp(130), dp(48)))
+            addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
+            addView(createButton, LinearLayout.LayoutParams(dp(88), dp(48)).apply { marginEnd = dp(5) })
+            addView(folderButton, LinearLayout.LayoutParams(dp(118), dp(48)))
         }
         root.addView(actionRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { bottomMargin = dp(14) })
         root.addView(searchField, LinearLayout.LayoutParams(
@@ -426,6 +442,69 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Toast.makeText(this, "Folder scan failed: " + e.message, Toast.LENGTH_LONG).show()
         }
+    }
+
+
+    private fun showCreateFileDialog() {
+        val input = EditText(this).apply {
+            hint = "Enter text for the new file"
+            minLines = 6
+            gravity = Gravity.TOP
+        }
+        val name = EditText(this).apply { setText("Untitled"); hint = "File name" }
+        val choices = arrayOf("Text file (.txt)", "CSV spreadsheet (.csv)", "PDF document (.pdf)")
+        AlertDialog.Builder(this).setTitle("Create a file").setItems(choices) { _, which ->
+            val ext = arrayOf("txt", "csv", "pdf")[which]
+            val form = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(8), dp(20), 0)
+                addView(name)
+                addView(input, LinearLayout.LayoutParams(-1, dp(150)))
+            }
+            AlertDialog.Builder(this).setTitle("New " + ext.uppercase(Locale.getDefault())).setView(form)
+                .setPositiveButton("Save") { _, _ ->
+                    try {
+                        val file = File(cacheDir, "created-" + System.currentTimeMillis() + "." + ext)
+                        if (ext == "pdf") createPdfFile(file, input.text.toString()) else file.writeText(input.text.toString())
+                        pendingCreatedFile = file
+                        val mime = if (ext == "pdf") "application/pdf" else if (ext == "csv") "text/csv" else "text/plain"
+                        val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                            addCategory(Intent.CATEGORY_OPENABLE)
+                            type = mime
+                            putExtra(Intent.EXTRA_TITLE, name.text.toString().trim().ifBlank { "Untitled" } + "." + ext)
+                        }
+                        startActivityForResult(save, createFileRequestCode)
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Could not create file: " + e.message, Toast.LENGTH_LONG).show()
+                    }
+                }.setNegativeButton("Cancel", null).show()
+        }.setNegativeButton("Cancel", null).show()
+    }
+
+    private fun createPdfFile(file: File, text: String) {
+        val pdf = PdfDocument()
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 12f }
+        var pageNo = 1
+        var page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
+        var y = 48f
+        text.lines().forEach { line ->
+            var rest = line.ifEmpty { " " }
+            while (rest.isNotEmpty()) {
+                if (y > 790f) {
+                    pdf.finishPage(page)
+                    pageNo++
+                    page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
+                    y = 48f
+                }
+                val count = paint.breakText(rest, true, 500f, null).coerceAtLeast(1)
+                page.canvas.drawText(rest.substring(0, count), 48f, y, paint)
+                rest = rest.substring(count)
+                y += 18f
+            }
+        }
+        pdf.finishPage(page)
+        file.outputStream().use { pdf.writeTo(it) }
+        pdf.close()
     }
 
     private fun chooseDocument() {
