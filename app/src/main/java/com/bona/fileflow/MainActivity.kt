@@ -1,6 +1,8 @@
 package com.bona.fileflow
 
 import androidx.activity.ComponentActivity
+import androidx.core.content.FileProvider
+import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -13,6 +15,8 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.PopupMenu
+import java.io.File
+import java.security.MessageDigest
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -29,7 +33,11 @@ class MainActivity : ComponentActivity() {
         val name: String,
         val mime: String,
         val openedAt: Long,
-        val favorite: Boolean
+        val favorite: Boolean,
+        val isDeleted: Boolean = false,
+        val isPrivate: Boolean = false,
+        val contentHash: String = "",
+        val privatePath: String = ""
     )
 
     private val prefs by lazy { getSharedPreferences("fileflow_library", MODE_PRIVATE) }
@@ -40,6 +48,7 @@ class MainActivity : ComponentActivity() {
     private var selectedTab = "All"
     private var sortNewestFirst = true
     private var lightMode = false
+    private var privateUnlocked = false
 
     private val purple = Color.rgb(139, 92, 246)
     private val darkBackground = Color.rgb(13, 13, 27)
@@ -149,7 +158,14 @@ class MainActivity : ComponentActivity() {
                 if (selectedTab == tab) setBackgroundColor(purple)
                 setOnClickListener {
                     selectedTab = tab
-                    createHomeScreen()
+                    if (tab == "Private" && !privateUnlocked) {
+                        verifyPrivatePin {
+                            privateUnlocked = true
+                            createHomeScreen()
+                        }
+                    } else {
+                        createHomeScreen()
+                    }
                 }
             }
             val params = LinearLayout.LayoutParams(
@@ -217,17 +233,29 @@ class MainActivity : ComponentActivity() {
         if (!::contentArea.isInitialized) return
         contentArea.removeAllViews()
         val query = if (::searchField.isInitialized) searchField.text.toString().trim() else ""
+        val duplicateHashes = documents.filter { !it.isDeleted && it.contentHash.isNotBlank() }
+            .groupingBy { it.contentHash }.eachCount().filterValues { it > 1 }.keys
         val filtered = documents.filter {
-            (selectedTab != "Favorites" || it.favorite) &&
-            (selectedTab != "Recent" || true) &&
-            it.name.contains(query, ignoreCase = true)
+            when (selectedTab) {
+                "Favorites" -> it.favorite && !it.isDeleted && !it.isPrivate
+                "Recent" -> !it.isDeleted && !it.isPrivate &&
+                    it.openedAt >= System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
+                "Private" -> it.isPrivate && !it.isDeleted
+                "Trash" -> it.isDeleted
+                "Duplicates" -> !it.isDeleted && !it.isPrivate && it.contentHash in duplicateHashes
+                else -> !it.isDeleted && !it.isPrivate
+            } && it.name.contains(query, ignoreCase = true)
         }.let { if (sortNewestFirst) it.sortedByDescending { d -> d.openedAt } else it.sortedBy { d -> d.name.lowercase(Locale.getDefault()) } }
 
         if (filtered.isEmpty()) {
             val empty = TextView(this).apply {
-                text = if (query.isNotEmpty()) "No matching documents found." else
-                    if (selectedTab == "Favorites") "Your favorite documents will appear here." else
-                    "Your library is empty. Open a document to get started."
+                text = if (query.isNotEmpty()) "No matching documents found." else when (selectedTab) {
+                    "Favorites" -> "Your favorite documents will appear here."
+                    "Private" -> "Your private documents will appear here."
+                    "Trash" -> "Recently deleted documents will appear here."
+                    "Duplicates" -> "No duplicate files were found."
+                    else -> "Your library is empty. Open a document to get started."
+                }
                 textSize = 14f
                 setTextColor(mutedText())
                 gravity = Gravity.CENTER
@@ -271,6 +299,14 @@ class MainActivity : ComponentActivity() {
         }
         details.addView(title)
         details.addView(info)
+        val more = TextView(this).apply {
+            text = "⋮"
+            textSize = 22f
+            setTextColor(mutedText())
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(5), dp(5), dp(5))
+            setOnClickListener { showDocumentMenu(this, item) }
+        }
         val favorite = TextView(this).apply {
             text = if (item.favorite) "★" else "☆"
             textSize = 23f
@@ -284,6 +320,7 @@ class MainActivity : ComponentActivity() {
             marginStart = dp(8)
         })
         card.addView(favorite)
+        card.addView(more)
         return card.apply {
             val outer = LinearLayout(this@MainActivity)
             outer.orientation = LinearLayout.VERTICAL
@@ -313,7 +350,10 @@ class MainActivity : ComponentActivity() {
         val name = queryName(uri) ?: "Untitled document"
         val mime = contentResolver.getType(uri) ?: guessMime(name)
         documents.removeAll { it.uri == uri.toString() }
-        documents.add(0, DocumentItem(uri.toString(), name, mime, System.currentTimeMillis(), false))
+        documents.add(0, DocumentItem(
+            uri.toString(), name, mime, System.currentTimeMillis(), false,
+            contentHash = calculateHash(uri)
+        ))
         saveDocuments()
     }
 
@@ -350,6 +390,141 @@ class MainActivity : ComponentActivity() {
             saveDocuments()
             renderDocuments()
         }
+    }
+
+    private fun showDocumentMenu(anchor: View, item: DocumentItem) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add("Share")
+        if (!item.isPrivate && !item.isDeleted) menu.menu.add("Move to private folder")
+        if (item.isDeleted) {
+            menu.menu.add("Restore")
+            menu.menu.add("Delete permanently")
+        } else {
+            menu.menu.add("Move to recently deleted")
+        }
+        menu.setOnMenuItemClickListener {
+            when (it.title.toString()) {
+                "Share" -> shareDocument(item)
+                "Move to private folder" -> moveToPrivateFolder(item)
+                "Move to recently deleted" -> moveToTrash(item)
+                "Restore" -> updateItem(item) { copy(isDeleted = false) }
+                "Delete permanently" -> permanentlyDelete(item)
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun updateItem(item: DocumentItem, transform: DocumentItem.() -> DocumentItem) {
+        val index = documents.indexOfFirst { it.uri == item.uri }
+        if (index >= 0) {
+            documents[index] = documents[index].transform()
+            saveDocuments()
+            renderDocuments()
+        }
+    }
+
+    private fun moveToTrash(item: DocumentItem) {
+        updateItem(item) { copy(isDeleted = true) }
+        Toast.makeText(this, "Moved to recently deleted", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun permanentlyDelete(item: DocumentItem) {
+        if (item.privatePath.isNotBlank()) File(item.privatePath).delete()
+        documents.removeAll { it.uri == item.uri }
+        saveDocuments()
+        renderDocuments()
+        Toast.makeText(this, "Removed from FileFlow", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun shareDocument(item: DocumentItem) {
+        try {
+            val uri = Uri.parse(item.uri)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = item.mime.ifBlank { "*/*" }
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(send, "Share document"))
+        } catch (_: Exception) {
+            Toast.makeText(this, "Unable to share this document.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun moveToPrivateFolder(item: DocumentItem) {
+        verifyPrivatePin {
+            try {
+                val folder = File(filesDir, "private_documents")
+                if (!folder.exists()) folder.mkdirs()
+                val safeName = item.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                val destination = File(folder, "${System.currentTimeMillis()}_$safeName")
+                contentResolver.openInputStream(Uri.parse(item.uri))!!.use { input ->
+                    destination.outputStream().use { output -> input.copyTo(output) }
+                }
+                val privateUri = FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", destination
+                )
+                val index = documents.indexOfFirst { it.uri == item.uri }
+                if (index >= 0) {
+                    documents[index] = item.copy(
+                        uri = privateUri.toString(),
+                        isPrivate = true,
+                        privatePath = destination.absolutePath
+                    )
+                    saveDocuments()
+                    renderDocuments()
+                }
+                Toast.makeText(this, "Private copy created inside FileFlow.", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not create private copy: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun verifyPrivatePin(onVerified: () -> Unit) {
+        val pinPrefs = getSharedPreferences("fileflow_security", MODE_PRIVATE)
+        val stored = pinPrefs.getString("pin_hash", null)
+        val field = EditText(this).apply {
+            hint = if (stored == null) "Create a PIN (4–8 digits)" else "Enter your PIN"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (stored == null) "Set private folder PIN" else "Unlock private folder")
+            .setView(field)
+            .setPositiveButton(if (stored == null) "Create PIN" else "Unlock") { _, _ ->
+                val pin = field.text.toString()
+                if (pin.length !in 4..8) {
+                    Toast.makeText(this, "PIN must contain 4–8 digits.", Toast.LENGTH_LONG).show()
+                } else {
+                    val hash = MessageDigest.getInstance("SHA-256")
+                        .digest(pin.toByteArray()).joinToString("") { "%02x".format(it) }
+                    if (stored == null) {
+                        pinPrefs.edit().putString("pin_hash", hash).apply()
+                        onVerified()
+                    } else if (hash == stored) {
+                        onVerified()
+                    } else {
+                        Toast.makeText(this, "Incorrect PIN.", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun calculateHash(uri: Uri): String {
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256")
+            contentResolver.openInputStream(uri)?.use { input ->
+                val buffer = ByteArray(8192)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count <= 0) break
+                    digest.update(buffer, 0, count)
+                }
+            } ?: return ""
+            digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) { "" }
     }
 
     private fun queryName(uri: Uri): String? {
@@ -395,7 +570,11 @@ class MainActivity : ComponentActivity() {
                 documents.add(DocumentItem(
                     obj.getString("uri"), obj.getString("name"),
                     obj.optString("mime", "*/*"), obj.optLong("openedAt"),
-                    obj.optBoolean("favorite", false)
+                    obj.optBoolean("favorite", false),
+                    obj.optBoolean("isDeleted", false),
+                    obj.optBoolean("isPrivate", false),
+                    obj.optString("contentHash", ""),
+                    obj.optString("privatePath", "")
                 ))
             }
         } catch (_: Exception) { }
@@ -407,6 +586,8 @@ class MainActivity : ComponentActivity() {
             array.put(JSONObject().apply {
                 put("uri", item.uri); put("name", item.name); put("mime", item.mime)
                 put("openedAt", item.openedAt); put("favorite", item.favorite)
+                put("isDeleted", item.isDeleted); put("isPrivate", item.isPrivate)
+                put("contentHash", item.contentHash); put("privatePath", item.privatePath)
             })
         }
         prefs.edit().putString("documents", array.toString()).apply()
