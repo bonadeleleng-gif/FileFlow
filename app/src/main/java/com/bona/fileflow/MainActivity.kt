@@ -18,6 +18,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.PopupMenu
 import java.io.File
 import java.security.MessageDigest
@@ -160,6 +161,11 @@ class MainActivity : ComponentActivity() {
                 createHomeScreen()
             }
         }
+        val logo = ImageView(this).apply {
+            setImageResource(com.bona.fileflow.R.drawable.fileflow_logo)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        header.addView(logo, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(10) })
         header.addView(brand, LinearLayout.LayoutParams(0, dp(42), 1f))
         header.addView(themeButton)
 
@@ -343,7 +349,7 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(13), dp(12), dp(10), dp(12))
-            setBackgroundColor(panel())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(panel()); cornerRadius = dp(15).toFloat() }
             isClickable = true
             setOnClickListener { openDocumentItem(item.uri) }
         }
@@ -391,9 +397,10 @@ class MainActivity : ComponentActivity() {
         })
         card.addView(favorite)
         card.addView(more)
-        return card.apply {
-            val outer = LinearLayout(this@MainActivity)
-            outer.orientation = LinearLayout.VERTICAL
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, 0, 0, dp(9))
+            addView(card, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
     }
 
