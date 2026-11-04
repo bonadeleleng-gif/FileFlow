@@ -270,8 +270,11 @@ class MainActivity : ComponentActivity() {
         root.addView(header)
         root.addView(subtitle)
         val folderButton = Button(this).apply {
-            text = "Browse folder"
+            text = "Folder"
             isAllCaps = false
+            textSize = 12f
+            setTextColor(mainText())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(panel()); cornerRadius = dp(13).toFloat() }
             setOnClickListener {
                 val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
@@ -279,7 +282,14 @@ class MainActivity : ComponentActivity() {
                 startActivityForResult(intent, folderRequestCode)
             }
         }
-        val createButton = Button(this).apply { text = "Create"; isAllCaps = false; setOnClickListener { showCreateFileDialog() } }
+        val createButton = Button(this).apply {
+            text = "+ Create"
+            isAllCaps = false
+            textSize = 12f
+            setTextColor(mainText())
+            background = android.graphics.drawable.GradientDrawable().apply { setColor(panel()); cornerRadius = dp(13).toFloat() }
+            setOnClickListener { showCreateFileDialog() }
+        }
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
