@@ -441,14 +441,14 @@ class PdfViewerActivity : Activity() {
                 val bitmap = try { renderBitmap(index, 1200) } catch (_: Exception) { null }
                 mainHandler.post {
                     if (bitmap == null) {
-                        output.append("\\n[Page ${index + 1}: could not render]\\n")
+                        output.append("\n[Page ${index + 1}: could not render]\n")
                         processPage(index + 1)
                     } else {
                         recognizer.process(InputImage.fromBitmap(bitmap, 0))
                             .addOnSuccessListener { result ->
                                 if (result.text.isNotBlank()) {
-                                    output.append("\\n--- Page ${index + 1} ---\\n")
-                                    output.append(result.text).append('\\n')
+                                    output.append("\n--- Page ${index + 1} ---\n")
+                                    output.append(result.text).append('\n')
                                 }
                             }
                             .addOnCompleteListener {
@@ -501,7 +501,7 @@ class PdfViewerActivity : Activity() {
                     .getString(key, "") ?: ""
                 val entry = "Page ${currentPage + 1}: ${input.text.toString().trim()}"
                 getSharedPreferences("fileflow_reader", MODE_PRIVATE).edit()
-                    .putString(key, if (old.isBlank()) entry else old + "\\n\\n" + entry)
+                    .putString(key, if (old.isBlank()) entry else old + "\n\n" + entry)
                     .apply()
                 Toast.makeText(this, "Note saved", Toast.LENGTH_SHORT).show()
             }
