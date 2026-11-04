@@ -1,6 +1,6 @@
 package com.bona.fileflow
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
@@ -22,7 +22,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
 
     private data class DocumentItem(
         val uri: String,
