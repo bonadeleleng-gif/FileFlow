@@ -47,10 +47,12 @@ class MainActivity : ComponentActivity() {
     private val lightBackground = Color.rgb(246, 245, 251)
     private val lightPanel = Color.WHITE
 
-    private val openDocument = registerForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        if (uri != null) {
+    private val openDocumentRequestCode = 4101
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == openDocumentRequestCode && resultCode == RESULT_OK) {
+            val uri = data?.data ?: return
             try {
                 contentResolver.takePersistableUriPermission(
                     uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -124,7 +126,7 @@ class MainActivity : ComponentActivity() {
         searchField = EditText(this).apply {
             hint = "Search your documents"
             textSize = 14f
-            singleLine = true
+            setSingleLine(true)
             setTextColor(mainText())
             setHintTextColor(mutedText())
             setPadding(dp(14), 0, dp(14), 0)
@@ -289,16 +291,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun chooseDocument() {
-        openDocument.launch(arrayOf(
-            "application/pdf",
-            "application/msword",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "application/vnd.ms-excel",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "application/vnd.ms-powerpoint",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            "text/plain", "text/csv", "application/epub+zip", "image/*", "*/*"
-        ))
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.ms-excel",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "application/vnd.ms-powerpoint",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "text/plain", "text/csv", "application/epub+zip", "image/*"
+            ))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        startActivityForResult(intent, openDocumentRequestCode)
     }
 
     private fun addDocument(uri: Uri) {
