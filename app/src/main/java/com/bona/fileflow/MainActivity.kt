@@ -459,9 +459,9 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.TOP
         }
         val name = EditText(this).apply { setText("Untitled"); hint = "File name" }
-        val choices = arrayOf("Text file (.txt)", "CSV spreadsheet (.csv)", "PDF document (.pdf)")
+        val choices = arrayOf("Word document (.docx)", "Excel spreadsheet (.xlsx)", "PDF document (.pdf)", "Text file (.txt)", "CSV spreadsheet (.csv)")
         AlertDialog.Builder(this).setTitle("Create a file").setItems(choices) { _, which ->
-            val ext = arrayOf("txt", "csv", "pdf")[which]
+            val ext = arrayOf("docx", "xlsx", "pdf", "txt", "csv")[which]
             val form = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(20), dp(8), dp(20), 0)
@@ -472,9 +472,9 @@ class MainActivity : ComponentActivity() {
                 .setPositiveButton("Save") { _, _ ->
                     try {
                         val file = File(cacheDir, "created-" + System.currentTimeMillis() + "." + ext)
-                        if (ext == "pdf") createPdfFile(file, input.text.toString()) else file.writeText(input.text.toString())
+                        when (ext) { "docx" -> makeDocx(file, input.text.toString()); "xlsx" -> makeXlsx(file, input.text.toString()); "pdf" -> createPdfFile(file, input.text.toString()); else -> file.writeText(input.text.toString()) }
                         pendingCreatedFile = file
-                        val mime = if (ext == "pdf") "application/pdf" else if (ext == "csv") "text/csv" else "text/plain"
+                        val mime = when (ext) { "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; "pdf" -> "application/pdf"; "csv" -> "text/csv"; else -> "text/plain" }
                         val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                             addCategory(Intent.CATEGORY_OPENABLE)
                             type = mime
@@ -486,6 +486,56 @@ class MainActivity : ComponentActivity() {
                     }
                 }.setNegativeButton("Cancel", null).show()
         }.setNegativeButton("Cancel", null).show()
+    }
+
+
+    private fun writeOfficeZip(file: File, parts: Map<String, String>) {
+        java.util.zip.ZipOutputStream(file.outputStream()).use { zip ->
+            parts.forEach { (path, xml) ->
+                zip.putNextEntry(java.util.zip.ZipEntry(path))
+                zip.write(xml.toByteArray(Charsets.UTF_8))
+                zip.closeEntry()
+            }
+        }
+    }
+
+    private fun xmlEscape(value: String): String = value
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace(String(charArrayOf(39)), "&apos;")
+
+    private fun makeDocx(file: File, text: String) {
+        val paragraphs = text.lines().joinToString("") { line ->
+            "<w:p><w:r><w:t>" + xmlEscape(line) + "</w:t></w:r></w:p>"
+        }
+        writeOfficeZip(file, mapOf(
+            "[Content_Types].xml" to """<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>""",
+            "_rels/.rels" to """<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>""",
+            "word/document.xml" to """<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>$paragraphs<w:sectPr/></w:body></w:document>"""
+        ))
+    }
+
+    private fun makeXlsx(file: File, text: String) {
+        val rows = text.lines().mapIndexed { rowIndex, line ->
+            val cells = line.split(",").mapIndexed { columnIndex, value ->
+                var n = columnIndex + 1
+                var column = ""
+                while (n > 0) {
+                    val remainder = (n - 1) % 26
+                    column = ("A".first().code + remainder).toChar() + column
+                    n = (n - 1) / 26
+                }
+                val reference = column + (rowIndex + 1)
+                """<c r="$reference" t="inlineStr"><is><t>""" + xmlEscape(value.trim()) + """</t></is></c>"""
+            }.joinToString("")
+            """<row r="${rowIndex + 1}">$cells</row>"""
+        }.joinToString("")
+        writeOfficeZip(file, mapOf(
+            "[Content_Types].xml" to """<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>""",
+            "_rels/.rels" to """<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>""",
+            "xl/workbook.xml" to """<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>""",
+            "xl/_rels/workbook.xml.rels" to """<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>""",
+            "xl/worksheets/sheet1.xml" to """<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>$rows</sheetData></worksheet>"""
+        ))
     }
 
     private fun createPdfFile(file: File, text: String) {
