@@ -1,7 +1,9 @@
 package com.bona.fileflow
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -9,6 +11,9 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.RectF
+import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
@@ -23,10 +28,21 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.EditText
+import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import android.graphics.drawable.GradientDrawable
 import java.util.concurrent.Executors
+import java.io.File
+import java.io.FileOutputStream
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
+import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import kotlin.math.abs
 
 class PdfViewerActivity : Activity() {
@@ -42,6 +58,11 @@ class PdfViewerActivity : Activity() {
     private lateinit var rotateButton: TextView
     private lateinit var scrollButton: TextView
     private lateinit var spreadButton: TextView
+    private lateinit var toolsButton: TextView
+    private var currentUri: Uri? = null
+    private var pendingExportFile: File? = null
+    private val exportRequestCode = 4202
+    private var lastOcrText: String = ""
     private lateinit var rootLayout: LinearLayout
     private lateinit var imageContainer: LinearLayout
     private var readerContainer: View? = null
@@ -74,6 +95,7 @@ class PdfViewerActivity : Activity() {
         createViewerInterface()
 
         val uri = intent.getParcelableExtra<Uri>("pdf_uri")
+        currentUri = uri
 
         if (uri == null) {
             Toast.makeText(this, "PDF file not found", Toast.LENGTH_LONG).show()
@@ -178,6 +200,7 @@ class PdfViewerActivity : Activity() {
         rotateButton = createControlButton("Auto rotate")
         scrollButton = createControlButton("Continuous")
         spreadButton = createControlButton("Two pages")
+        toolsButton = createControlButton("Tools")
 
         sepiaButton.setOnClickListener {
             sepiaEnabled = !sepiaEnabled
@@ -235,6 +258,10 @@ class PdfViewerActivity : Activity() {
         })
         spreadButton.isEnabled = false
         spreadButton.alpha = 0.55f
+        toolsButton.setOnClickListener { showToolsMenu(toolsButton) }
+        controlsRow.addView(toolsButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginStart = dp(3)
+        })
 
         rootLayout.addView(controlsRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(39)
@@ -246,6 +273,192 @@ class PdfViewerActivity : Activity() {
         ))
 
         setContentView(rootLayout)
+    }
+
+    private fun showToolsMenu(anchor: View) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add("Save this section")
+        menu.menu.add("Add note")
+        menu.menu.add("OCR this page")
+        menu.menu.add("Translate OCR text")
+        menu.menu.add("Export this page as PDF")
+        menu.menu.add("Protect exported PDF with password")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.title.toString()) {
+                "Save this section" -> saveCurrentSection()
+                "Add note" -> addPageNote()
+                "OCR this page" -> runOcrOnCurrentPage()
+                "Translate OCR text" -> translateLastOcrText()
+                "Export this page as PDF" -> exportCurrentPage(false)
+                "Protect exported PDF with password" -> exportCurrentPage(true)
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun saveCurrentSection() {
+        val key = "saved_sections_" + (currentUri?.toString() ?: "unknown")
+        val saved = getSharedPreferences("fileflow_reader", MODE_PRIVATE)
+            .getStringSet(key, emptySet())?.toMutableSet() ?: mutableSetOf()
+        saved.add(currentPage.toString())
+        getSharedPreferences("fileflow_reader", MODE_PRIVATE).edit()
+            .putStringSet(key, saved).apply()
+        Toast.makeText(this, "Section saved (page ${currentPage + 1})", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun addPageNote() {
+        val input = EditText(this).apply {
+            hint = "Write a note for this page"
+            minLines = 3
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Note for page ${currentPage + 1}")
+            .setView(input)
+            .setPositiveButton("Save") { _, _ ->
+                val key = "notes_" + (currentUri?.toString() ?: "unknown")
+                val old = getSharedPreferences("fileflow_reader", MODE_PRIVATE)
+                    .getString(key, "") ?: ""
+                val entry = "Page ${currentPage + 1}: ${input.text.toString().trim()}"
+                getSharedPreferences("fileflow_reader", MODE_PRIVATE).edit()
+                    .putString(key, if (old.isBlank()) entry else old + "\\n\\n" + entry)
+                    .apply()
+                Toast.makeText(this, "Note saved", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun runOcrOnCurrentPage() {
+        val bitmap = (pageImage.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+        if (bitmap == null) {
+            Toast.makeText(this, "Display the page first, then try OCR.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        Toast.makeText(this, "Reading text from this page…", Toast.LENGTH_SHORT).show()
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        recognizer.process(InputImage.fromBitmap(bitmap, 0))
+            .addOnSuccessListener { result ->
+                lastOcrText = result.text
+                if (lastOcrText.isBlank()) {
+                    Toast.makeText(this, "No readable text found on this page.", Toast.LENGTH_LONG).show()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Extracted text")
+                        .setMessage(lastOcrText)
+                        .setPositiveButton("Copy") { _, _ ->
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("OCR text", lastOcrText))
+                            Toast.makeText(this, "Text copied", Toast.LENGTH_SHORT).show()
+                        }
+                        .setNeutralButton("Translate") { _, _ -> translateLastOcrText() }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+                recognizer.close()
+            }
+            .addOnFailureListener {
+                recognizer.close()
+                Toast.makeText(this, "OCR failed on this page.", Toast.LENGTH_LONG).show()
+            }
+    }
+
+    private fun translateLastOcrText() {
+        if (lastOcrText.isBlank()) {
+            Toast.makeText(this, "Run OCR on a page first.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, lastOcrText)
+        }
+        startActivity(Intent.createChooser(intent, "Send extracted text to a translation app"))
+    }
+
+    private fun exportCurrentPage(protect: Boolean) {
+        val bitmap = (pageImage.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+        if (bitmap == null) {
+            Toast.makeText(this, "The current page is not ready.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (protect) {
+            val passwordInput = EditText(this).apply {
+                hint = "Set a PDF password"
+                inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Protect exported PDF")
+                .setMessage("This exports only the current page and encrypts that new PDF.")
+                .setView(passwordInput)
+                .setPositiveButton("Continue") { _, _ ->
+                    val password = passwordInput.text.toString()
+                    if (password.length < 4) {
+                        Toast.makeText(this, "Use at least 4 characters.", Toast.LENGTH_LONG).show()
+                    } else {
+                        createPagePdf(bitmap, password)
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else {
+            createPagePdf(bitmap, null)
+        }
+    }
+
+    private fun createPagePdf(bitmap: Bitmap, password: String?) {
+        try {
+            val output = File(cacheDir, "FileFlow-page-${currentPage + 1}.pdf")
+            val document = PdfDocument()
+            val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, 1).create()
+            val page = document.startPage(pageInfo)
+            page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+            document.finishPage(page)
+            FileOutputStream(output).use { document.writeTo(it) }
+            document.close()
+
+            if (password != null) {
+                PDFBoxResourceLoader.init(applicationContext)
+                val loaded = PDDocument.load(output)
+                try {
+                    val permissions = AccessPermission()
+                    val policy = StandardProtectionPolicy(password, password, permissions)
+                    policy.encryptionKeyLength = 128
+                    loaded.protect(policy)
+                    loaded.save(output)
+                } finally {
+                    loaded.close()
+                }
+            }
+            pendingExportFile = output
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_TITLE, output.name)
+            }
+            startActivityForResult(intent, exportRequestCode)
+        } catch (e: Exception) {
+            Toast.makeText(this, "PDF export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == exportRequestCode && resultCode == RESULT_OK) {
+            val destination = data?.data ?: return
+            val source = pendingExportFile ?: return
+            try {
+                contentResolver.openOutputStream(destination)?.use { out ->
+                    source.inputStream().use { input -> input.copyTo(out) }
+                }
+                Toast.makeText(this, "PDF saved successfully", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Could not save PDF: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                source.delete()
+                pendingExportFile = null
+            }
+        }
     }
 
     private fun switchReaderContainer() {
