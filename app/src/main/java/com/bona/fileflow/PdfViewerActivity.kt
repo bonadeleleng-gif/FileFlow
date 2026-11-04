@@ -697,7 +697,7 @@ class PdfViewerActivity : Activity() {
                 contentResolver.openOutputStream(destination)?.use { out ->
                     source.inputStream().use { input -> input.copyTo(out) }
                 }
-                Toast.makeText(this, "PDF saved successfully", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "File saved successfully", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "Could not save PDF: ${e.message}", Toast.LENGTH_LONG).show()
             } finally {
@@ -717,6 +717,7 @@ class PdfViewerActivity : Activity() {
         rootLayout.addView(next, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
+        if (!continuousMode) renderPage()
     }
 
     private fun buildContinuousReader(): ScrollView {
