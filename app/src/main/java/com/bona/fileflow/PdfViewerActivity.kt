@@ -13,6 +13,7 @@ import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -279,6 +280,10 @@ class PdfViewerActivity : Activity() {
         val menu = PopupMenu(this, anchor)
         menu.menu.add("Save this section")
         menu.menu.add("Add note")
+        menu.menu.add("Draw on page")
+        menu.menu.add("Highlight")
+        menu.menu.add("Underline")
+        menu.menu.add("Stop annotating")
         menu.menu.add("OCR this page")
         menu.menu.add("Translate OCR text")
         menu.menu.add("Export this page as PDF")
@@ -287,6 +292,10 @@ class PdfViewerActivity : Activity() {
             when (item.title.toString()) {
                 "Save this section" -> saveCurrentSection()
                 "Add note" -> addPageNote()
+                "Draw on page" -> setAnnotationMode("draw")
+                "Highlight" -> setAnnotationMode("highlight")
+                "Underline" -> setAnnotationMode("underline")
+                "Stop annotating" -> setAnnotationMode(null)
                 "OCR this page" -> runOcrOnCurrentPage()
                 "Translate OCR text" -> translateLastOcrText()
                 "Export this page as PDF" -> exportCurrentPage(false)
@@ -295,6 +304,23 @@ class PdfViewerActivity : Activity() {
             true
         }
         menu.show()
+    }
+
+    private fun setAnnotationMode(mode: String?) {
+        val target = if (continuousMode) {
+            continuousPageViews.getOrNull(currentPage)
+        } else pageImage
+        target?.setAnnotationMode(mode)
+        Toast.makeText(
+            this,
+            when (mode) {
+                "draw" -> "Draw mode: drag your finger over the page."
+                "highlight" -> "Highlight mode: drag over text."
+                "underline" -> "Underline mode: drag under text."
+                else -> "Annotation mode off."
+            },
+            Toast.LENGTH_SHORT
+        ).show()
     }
 
     private fun saveCurrentSection() {
@@ -509,6 +535,7 @@ class PdfViewerActivity : Activity() {
                     setBackgroundColor(Color.WHITE)
                     scaleType = ImageView.ScaleType.MATRIX
                 }
+                image.setAnnotationStorageKey(annotationKey(pageIndex))
                 continuousPageViews.add(image)
                 val availableWidth = resources.displayMetrics.widthPixels -
                     dp(20) - if (count == 2) dp(12) else 0
@@ -612,7 +639,13 @@ class PdfViewerActivity : Activity() {
         }
     }
 
+    private fun annotationKey(page: Int): String =
+        "annotations_" + (currentUri?.toString() ?: "unknown") + "_" + page
+
     private fun updateCounter() {
+        if (::pageImage.isInitialized && !continuousMode) {
+            pageImage.setAnnotationStorageKey(annotationKey(currentPage))
+        }
         val total = renderer?.pageCount ?: 1
         pageCounter.text = "PAGE ${currentPage + 1} / $total"
     }
@@ -780,6 +813,92 @@ class PdfViewerActivity : Activity() {
             setBackgroundColor(Color.rgb(35, 35, 48))
         }
 
+        private var annotationMode: String? = null
+        private var annotationStorageKey: String? = null
+        private data class SavedStroke(val mode: String, val points: MutableList<PointF>)
+        private val savedStrokes = mutableListOf<SavedStroke>()
+        private var activeStroke: SavedStroke? = null
+
+        fun setAnnotationStorageKey(key: String) {
+            if (annotationStorageKey == key) return
+            annotationStorageKey = key
+            savedStrokes.clear()
+            val raw = context.getSharedPreferences("fileflow_reader", Context.MODE_PRIVATE)
+                .getString(key, null) ?: return
+            try {
+                val array = org.json.JSONArray(raw)
+                for (i in 0 until array.length()) {
+                    val item = array.getJSONObject(i)
+                    val pointsArray = item.getJSONArray("points")
+                    val points = mutableListOf<PointF>()
+                    for (j in 0 until pointsArray.length()) {
+                        val p = pointsArray.getJSONObject(j)
+                        points.add(PointF(p.getDouble("x").toFloat(), p.getDouble("y").toFloat()))
+                    }
+                    savedStrokes.add(SavedStroke(item.getString("mode"), points))
+                }
+            } catch (_: Exception) { }
+            invalidate()
+        }
+
+        fun setAnnotationMode(mode: String?) {
+            annotationMode = mode
+            isClickable = mode != null
+            invalidate()
+        }
+
+        private fun saveAnnotations() {
+            val array = org.json.JSONArray()
+            savedStrokes.forEach { stroke ->
+                val points = org.json.JSONArray()
+                stroke.points.forEach { point ->
+                    points.put(org.json.JSONObject().put("x", point.x).put("y", point.y))
+                }
+                array.put(org.json.JSONObject().put("mode", stroke.mode).put("points", points))
+            }
+            annotationStorageKey?.let { key ->
+                context.getSharedPreferences("fileflow_reader", Context.MODE_PRIVATE)
+                    .edit().putString(key, array.toString()).apply()
+            }
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val all = savedStrokes.toMutableList()
+            activeStroke?.let { all.add(it) }
+            all.forEach { stroke ->
+                if (stroke.points.size < 2) return@forEach
+                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    style = Paint.Style.STROKE
+                    strokeCap = Paint.Cap.ROUND
+                    strokeJoin = Paint.Join.ROUND
+                    when (stroke.mode) {
+                        "highlight" -> {
+                            color = Color.argb(95, 255, 220, 40)
+                            strokeWidth = dpLocal(18f)
+                        }
+                        "underline" -> {
+                            color = Color.rgb(255, 90, 90)
+                            strokeWidth = dpLocal(2.5f)
+                        }
+                        else -> {
+                            color = Color.rgb(255, 70, 70)
+                            strokeWidth = dpLocal(3.5f)
+                        }
+                    }
+                }
+                val path = Path()
+                stroke.points.forEachIndexed { index, point ->
+                    val x = point.x * width
+                    val y = point.y * height
+                    if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                canvas.drawPath(path, paint)
+            }
+        }
+
+        private fun dpLocal(value: Float): Float = value * resources.displayMetrics.density
+
         fun displayBitmap(bitmap: Bitmap) {
             setImageBitmap(bitmap)
             applySepiaFilter()
@@ -858,6 +977,46 @@ class PdfViewerActivity : Activity() {
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (annotationMode != null && event.pointerCount == 1) {
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        activeStroke = SavedStroke(
+                            annotationMode!!,
+                            mutableListOf(PointF(
+                                (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                                (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                            ))
+                        )
+                        invalidate()
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        activeStroke?.points?.add(PointF(
+                            (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                            (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                        ))
+                        invalidate()
+                        return true
+                    }
+                    MotionEvent.ACTION_UP -> {
+                        activeStroke?.points?.add(PointF(
+                            (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                            (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                        ))
+                        activeStroke?.let { savedStrokes.add(it) }
+                        activeStroke = null
+                        saveAnnotations()
+                        invalidate()
+                        performClick()
+                        return true
+                    }
+                    MotionEvent.ACTION_CANCEL -> {
+                        activeStroke = null
+                        invalidate()
+                        return true
+                    }
+                }
+            }
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
