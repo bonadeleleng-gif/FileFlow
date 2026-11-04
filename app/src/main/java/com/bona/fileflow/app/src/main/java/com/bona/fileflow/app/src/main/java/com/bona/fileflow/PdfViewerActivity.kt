@@ -11,16 +11,21 @@ import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.ParcelFileDescriptor
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.VelocityTracker
 import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import android.graphics.drawable.GradientDrawable
+import java.util.concurrent.Executors
+import kotlin.math.abs
 
 class PdfViewerActivity : Activity() {
 
@@ -34,8 +39,14 @@ class PdfViewerActivity : Activity() {
     private val backgroundColor = Color.rgb(13, 13, 27)
     private val panelColor = Color.rgb(25, 25, 43)
     private val purpleColor = Color.rgb(139, 92, 246)
-    private val whiteColor = Color.WHITE
     private val mutedColor = Color.rgb(165, 165, 185)
+
+    private val renderExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val rendererLock = Any()
+
+    @Volatile
+    private var destroyed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,7 +72,11 @@ class PdfViewerActivity : Activity() {
             renderPage()
 
         } catch (e: Exception) {
-            Toast.makeText(this, "Unable to open this PDF", Toast.LENGTH_LONG).show()
+            Toast.makeText(
+                this,
+                "Unable to open this PDF",
+                Toast.LENGTH_LONG
+            ).show()
             finish()
         }
     }
@@ -99,7 +114,7 @@ class PdfViewerActivity : Activity() {
         val readingLabel = TextView(this).apply {
             text = "Reading document"
             textSize = 18f
-            setTextColor(whiteColor)
+            setTextColor(Color.WHITE)
             typeface = android.graphics.Typeface.DEFAULT_BOLD
             setPadding(0, dp(25), 0, dp(12))
         }
@@ -123,17 +138,7 @@ class PdfViewerActivity : Activity() {
         counterContainer.addView(pageCounter)
 
         pageImage = ZoomableImageView(this) { direction ->
-            if (direction < 0) {
-                if (currentPage < (renderer?.pageCount ?: 0) - 1) {
-                    currentPage++
-                    renderPage()
-                }
-            } else {
-                if (currentPage > 0) {
-                    currentPage--
-                    renderPage()
-                }
-            }
+            changePage(direction)
         }
 
         pageImage.setBackgroundColor(Color.rgb(35, 35, 48))
@@ -181,57 +186,109 @@ class PdfViewerActivity : Activity() {
         setContentView(root)
     }
 
-    private fun roundedBackground(color: Int, radius: Int): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-        }
+    private fun changePage(direction: Int) {
+
+        val totalPages = renderer?.pageCount ?: return
+
+        val newPage = currentPage - direction
+
+        if (newPage !in 0 until totalPages) return
+
+        currentPage = newPage
+
+        pageCounter.text =
+            "PAGE ${currentPage + 1} / $totalPages"
+
+        renderPage()
     }
 
     private fun renderPage() {
 
-        val pdf = renderer ?: return
+        val requestedPage = currentPage
 
-        if (currentPage !in 0 until pdf.pageCount) return
+        pageCounter.text =
+            "PAGE ${requestedPage + 1} / ${renderer?.pageCount ?: 1}"
 
-        try {
-            val page = pdf.openPage(currentPage)
+        renderExecutor.execute {
 
-            val targetWidth = (
-                resources.displayMetrics.widthPixels * 2
-            ).coerceIn(1200, 2400)
+            var bitmap: Bitmap? = null
 
-            val targetHeight = (
-                targetWidth.toFloat() * page.height / page.width
-            ).toInt().coerceAtLeast(1)
+            try {
+                bitmap = synchronized(rendererLock) {
 
-            val bitmap = Bitmap.createBitmap(
-                targetWidth,
-                targetHeight,
-                Bitmap.Config.ARGB_8888
-            )
+                    val pdf = renderer ?: return@synchronized null
 
-            Canvas(bitmap).drawColor(Color.WHITE)
+                    if (requestedPage !in 0 until pdf.pageCount) {
+                        return@synchronized null
+                    }
 
-            page.render(
-                bitmap,
-                null,
-                null,
-                PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
-            )
+                    val page = pdf.openPage(requestedPage)
 
-            page.close()
+                    try {
+                        val targetWidth = (
+                            resources.displayMetrics.widthPixels * 2
+                        ).coerceIn(1200, 2400)
 
-            pageImage.displayBitmap(bitmap)
+                        val targetHeight = (
+                            targetWidth.toFloat() *
+                                page.height / page.width
+                        ).toInt().coerceAtLeast(1)
 
-            pageCounter.text = "PAGE ${currentPage + 1} / ${pdf.pageCount}"
+                        val pageBitmap = Bitmap.createBitmap(
+                            targetWidth,
+                            targetHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
 
-        } catch (e: Exception) {
-            Toast.makeText(
-                this,
-                "Unable to display this page",
-                Toast.LENGTH_SHORT
-            ).show()
+                        Canvas(pageBitmap).drawColor(Color.WHITE)
+
+                        page.render(
+                            pageBitmap,
+                            null,
+                            null,
+                            PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY
+                        )
+
+                        pageBitmap
+
+                    } finally {
+                        page.close()
+                    }
+                }
+
+                mainHandler.post {
+
+                    if (!destroyed &&
+                        requestedPage == currentPage &&
+                        bitmap != null
+                    ) {
+                        pageImage.displayBitmap(bitmap)
+                    } else {
+                        bitmap?.recycle()
+                    }
+                }
+
+            } catch (e: Exception) {
+                mainHandler.post {
+                    if (!destroyed) {
+                        Toast.makeText(
+                            this,
+                            "Unable to display this page",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun roundedBackground(
+        color: Int,
+        radius: Int
+    ): GradientDrawable {
+        return GradientDrawable().apply {
+            setColor(color)
+            cornerRadius = dp(radius).toFloat()
         }
     }
 
@@ -240,11 +297,18 @@ class PdfViewerActivity : Activity() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        renderExecutor.shutdownNow()
+
+        synchronized(rendererLock) {
+            renderer?.close()
+            renderer = null
+
+            fileDescriptor?.close()
+            fileDescriptor = null
+        }
+
         super.onDestroy()
-        renderer?.close()
-        renderer = null
-        fileDescriptor?.close()
-        fileDescriptor = null
     }
 
     class ZoomableImageView(
@@ -264,18 +328,25 @@ class PdfViewerActivity : Activity() {
         private var startY = 0f
 
         private var hadMultiplePointers = false
+        private var velocityTracker: VelocityTracker? = null
 
         private val swipeThreshold =
-            80f * resources.displayMetrics.density
+            35f * resources.displayMetrics.density
+
+        private val minimumSwipeVelocity =
+            450f * resources.displayMetrics.density
 
         private val scaleDetector = ScaleGestureDetector(
             context,
             object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
 
-                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                override fun onScale(
+                    detector: ScaleGestureDetector
+                ): Boolean {
 
-                    val newScale = (currentScale * detector.scaleFactor)
-                        .coerceIn(baseScale, baseScale * 5f)
+                    val newScale = (
+                        currentScale * detector.scaleFactor
+                    ).coerceIn(baseScale, baseScale * 5f)
 
                     val factor = newScale / currentScale
 
@@ -287,6 +358,7 @@ class PdfViewerActivity : Activity() {
                     )
 
                     currentScale = newScale
+
                     clampImage()
                     imageMatrix = imageMatrixValue
 
@@ -302,12 +374,23 @@ class PdfViewerActivity : Activity() {
 
         fun displayBitmap(bitmap: Bitmap) {
             setImageBitmap(bitmap)
-            if (width > 0 && height > 0) fitImage()
+
+            if (width > 0 && height > 0) {
+                fitImage()
+            }
         }
 
-        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        override fun onSizeChanged(
+            w: Int,
+            h: Int,
+            oldw: Int,
+            oldh: Int
+        ) {
             super.onSizeChanged(w, h, oldw, oldh)
-            if (drawable != null) fitImage()
+
+            if (drawable != null) {
+                fitImage()
+            }
         }
 
         private fun fitImage() {
@@ -321,15 +404,19 @@ class PdfViewerActivity : Activity() {
                 width <= 0 || height <= 0
             ) return
 
-            baseScale = minOf(
-                width.toFloat() / imageWidth,
-                height.toFloat() / imageHeight
-            )
-
+            // Fit the page to the available screen width.
+            // Taller pages can be moved vertically.
+            baseScale = width.toFloat() / imageWidth
             currentScale = baseScale
 
-            val x = (width - imageWidth * baseScale) / 2f
-            val y = (height - imageHeight * baseScale) / 2f
+            val scaledHeight = imageHeight * baseScale
+
+            val x = 0f
+            val y = if (scaledHeight < height) {
+                (height - scaledHeight) / 2f
+            } else {
+                0f
+            }
 
             imageMatrixValue.reset()
             imageMatrixValue.setScale(baseScale, baseScale)
@@ -340,36 +427,61 @@ class PdfViewerActivity : Activity() {
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
 
-            scaleDetector.onTouchEvent(event)
-
             when (event.actionMasked) {
 
                 MotionEvent.ACTION_DOWN -> {
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain()
+
+                    velocityTracker?.addMovement(event)
+
                     startX = event.x
                     startY = event.y
                     lastX = event.x
                     lastY = event.y
+
                     hadMultiplePointers = false
+
+                    scaleDetector.onTouchEvent(event)
+
                     return true
                 }
 
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     hadMultiplePointers = true
+                    velocityTracker?.addMovement(event)
+                    scaleDetector.onTouchEvent(event)
                     return true
                 }
 
                 MotionEvent.ACTION_MOVE -> {
 
-                    if (currentScale > baseScale * 1.01f &&
-                        !scaleDetector.isInProgress &&
+                    velocityTracker?.addMovement(event)
+                    scaleDetector.onTouchEvent(event)
+
+                    if (!scaleDetector.isInProgress &&
                         event.pointerCount == 1
                     ) {
+
                         val dx = event.x - lastX
                         val dy = event.y - lastY
 
-                        imageMatrixValue.postTranslate(dx, dy)
-                        clampImage()
-                        imageMatrix = imageMatrixValue
+                        val zoomed =
+                            currentScale > baseScale * 1.01f
+
+                        val image = drawable
+
+                        val pageIsTall =
+                            image != null &&
+                            image.intrinsicHeight * baseScale > height
+
+                        if (zoomed ||
+                            (pageIsTall && abs(dy) > abs(dx))
+                        ) {
+                            imageMatrixValue.postTranslate(dx, dy)
+                            clampImage()
+                            imageMatrix = imageMatrixValue
+                        }
                     }
 
                     lastX = event.x
@@ -378,32 +490,64 @@ class PdfViewerActivity : Activity() {
                     return true
                 }
 
+                MotionEvent.ACTION_POINTER_UP -> {
+                    hadMultiplePointers = true
+                    scaleDetector.onTouchEvent(event)
+                    return true
+                }
+
                 MotionEvent.ACTION_UP -> {
+
+                    velocityTracker?.addMovement(event)
+                    velocityTracker?.computeCurrentVelocity(1000)
 
                     val dx = event.x - startX
                     val dy = event.y - startY
 
+                    val velocityX =
+                        velocityTracker?.xVelocity ?: 0f
+
+                    val horizontalSwipe =
+                        abs(dx) > abs(dy) * 1.2f
+
+                    val longEnough =
+                        abs(dx) > swipeThreshold
+
+                    val fastEnough =
+                        abs(velocityX) > minimumSwipeVelocity
+
                     if (!hadMultiplePointers &&
-                        !scaleDetector.isInProgress &&
                         currentScale <= baseScale * 1.01f &&
-                        kotlin.math.abs(dx) > swipeThreshold &&
-                        kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.3f
+                        horizontalSwipe &&
+                        (longEnough || fastEnough)
                     ) {
-                        if (dx < 0) {
+
+                        if (dx < 0 || velocityX < -minimumSwipeVelocity) {
                             onPageSwipe(-1)
                         } else {
                             onPageSwipe(1)
                         }
+
                     } else {
                         performClick()
                     }
 
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+
+                    scaleDetector.onTouchEvent(event)
+
                     return true
                 }
 
-                MotionEvent.ACTION_CANCEL -> return true
+                MotionEvent.ACTION_CANCEL -> {
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                    return true
+                }
             }
 
+            scaleDetector.onTouchEvent(event)
             return true
         }
 
