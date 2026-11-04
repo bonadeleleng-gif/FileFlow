@@ -5,6 +5,8 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
@@ -35,6 +37,12 @@ class PdfViewerActivity : Activity() {
 
     private lateinit var pageImage: ZoomableImageView
     private lateinit var pageCounter: TextView
+    private lateinit var sepiaButton: TextView
+    private lateinit var fitButton: TextView
+    private lateinit var rotateButton: TextView
+    private var sepiaEnabled = false
+    private var fitWidthEnabled = false
+    private var orientationLocked = false
 
     private val backgroundColor = Color.rgb(13, 13, 27)
     private val panelColor = Color.rgb(25, 25, 43)
@@ -150,11 +158,70 @@ class PdfViewerActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT, dp(29)
         ))
 
+        val controlsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(0, dp(2), 0, dp(5))
+        }
+
+        sepiaButton = createControlButton("Sepia")
+        fitButton = createControlButton("Fit width")
+        rotateButton = createControlButton("Auto rotate")
+
+        sepiaButton.setOnClickListener {
+            sepiaEnabled = !sepiaEnabled
+            pageImage.setSepia(sepiaEnabled)
+            sepiaButton.text = if (sepiaEnabled) "Normal" else "Sepia"
+        }
+
+        fitButton.setOnClickListener {
+            fitWidthEnabled = !fitWidthEnabled
+            pageImage.setFitWidth(fitWidthEnabled)
+            fitButton.text = if (fitWidthEnabled) "Fit page" else "Fit width"
+        }
+
+        rotateButton.setOnClickListener {
+            orientationLocked = !orientationLocked
+            requestedOrientation = if (orientationLocked) {
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            }
+            rotateButton.text = if (orientationLocked) "Unlock rotate" else "Auto rotate"
+        }
+
+        controlsRow.addView(sepiaButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginEnd = dp(4)
+        })
+        controlsRow.addView(fitButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginStart = dp(4)
+            marginEnd = dp(4)
+        })
+        controlsRow.addView(rotateButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
+            marginStart = dp(4)
+        })
+
+        root.addView(controlsRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(39)
+        ))
+
         root.addView(imageContainer, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 
         setContentView(root)
+    }
+
+    private fun createControlButton(label: String): TextView {
+        return TextView(this).apply {
+            text = label
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setTextColor(Color.WHITE)
+            background = roundedBackground(panelColor, 8)
+            isClickable = true
+            isFocusable = true
+        }
     }
 
     private fun updateCounter() {
@@ -279,6 +346,7 @@ class PdfViewerActivity : Activity() {
 
         private var baseScale = 1f
         private var currentScale = 1f
+        private var fitWidthMode = false
 
         private var startX = 0f
         private var startY = 0f
@@ -325,6 +393,36 @@ class PdfViewerActivity : Activity() {
 
         fun displayBitmap(bitmap: Bitmap) {
             setImageBitmap(bitmap)
+            applySepiaFilter()
+            fitImage()
+        }
+
+        fun setSepia(enabled: Boolean) {
+            sepiaEnabledForView = enabled
+            applySepiaFilter()
+        }
+
+        private var sepiaEnabledForView = false
+
+        private fun applySepiaFilter() {
+            if (!sepiaEnabledForView) {
+                colorFilter = null
+                return
+            }
+
+            val sepia = ColorMatrix(
+                floatArrayOf(
+                    0.393f, 0.769f, 0.189f, 0f, 0f,
+                    0.349f, 0.686f, 0.168f, 0f, 0f,
+                    0.272f, 0.534f, 0.131f, 0f, 0f,
+                    0f, 0f, 0f, 1f, 0f
+                )
+            )
+            colorFilter = ColorMatrixColorFilter(sepia)
+        }
+
+        fun setFitWidth(enabled: Boolean) {
+            fitWidthMode = enabled
             fitImage()
         }
 
@@ -345,10 +443,14 @@ class PdfViewerActivity : Activity() {
                 width <= 0 || height <= 0
             ) return
 
-            baseScale = minOf(
-                width.toFloat() / imageWidth,
-                height.toFloat() / imageHeight
-            )
+            baseScale = if (fitWidthMode) {
+                width.toFloat() / imageWidth
+            } else {
+                minOf(
+                    width.toFloat() / imageWidth,
+                    height.toFloat() / imageHeight
+                )
+            }
 
             currentScale = baseScale
 
