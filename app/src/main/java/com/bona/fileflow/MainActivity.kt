@@ -148,7 +148,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(14), 0, dp(8))
         }
-        listOf("All", "Recent", "Favorites").forEach { tab ->
+        listOf("All", "Recent", "Favorites", "Private", "Trash", "Duplicates").forEach { tab ->
             val chip = TextView(this).apply {
                 text = tab
                 textSize = 13f
@@ -183,6 +183,9 @@ class MainActivity : ComponentActivity() {
             text = when (selectedTab) {
                 "Recent" -> "Recently opened"
                 "Favorites" -> "Your favorites"
+                "Private" -> "Private folder"
+                "Trash" -> "Recently deleted"
+                "Duplicates" -> "Duplicate documents"
                 else -> "Your library"
             }
             textSize = 18f
