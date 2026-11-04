@@ -64,6 +64,7 @@ class PdfViewerActivity : Activity() {
     private var currentUri: Uri? = null
     private var pendingExportFile: File? = null
     private val exportRequestCode = 4202
+    private val imageExportRequestCode = 4203
     private var lastOcrText: String = ""
     private lateinit var rootLayout: LinearLayout
     private lateinit var imageContainer: LinearLayout
@@ -280,26 +281,36 @@ class PdfViewerActivity : Activity() {
     private fun showToolsMenu(anchor: View) {
         val menu = PopupMenu(this, anchor)
         menu.menu.add("Save this section")
+        menu.menu.add("View saved sections")
         menu.menu.add("Add note")
+        menu.menu.add("View notes")
         menu.menu.add("Draw on page")
         menu.menu.add("Highlight")
         menu.menu.add("Underline")
         menu.menu.add("Stop annotating")
         menu.menu.add("OCR this page")
+        menu.menu.add("OCR entire PDF")
         menu.menu.add("Translate OCR text")
+        menu.menu.add("Screen brightness")
         menu.menu.add("Export this page as PDF")
+        menu.menu.add("Export this page as image")
         menu.menu.add("Protect exported PDF with password")
         menu.setOnMenuItemClickListener { item ->
             when (item.title.toString()) {
                 "Save this section" -> saveCurrentSection()
+                "View saved sections" -> viewSavedSections()
                 "Add note" -> addPageNote()
+                "View notes" -> viewPageNotes()
                 "Draw on page" -> setAnnotationMode("draw")
                 "Highlight" -> setAnnotationMode("highlight")
                 "Underline" -> setAnnotationMode("underline")
                 "Stop annotating" -> setAnnotationMode(null)
                 "OCR this page" -> runOcrOnCurrentPage()
+                "OCR entire PDF" -> runOcrOnWholeDocument()
                 "Translate OCR text" -> translateLastOcrText()
+                "Screen brightness" -> showBrightnessControl()
                 "Export this page as PDF" -> exportCurrentPage(false)
+                "Export this page as image" -> exportCurrentPageAsImage()
                 "Protect exported PDF with password" -> exportCurrentPage(true)
             }
             true
@@ -334,6 +345,147 @@ class PdfViewerActivity : Activity() {
         Toast.makeText(this, "Section saved (page ${currentPage + 1})", Toast.LENGTH_SHORT).show()
     }
 
+    private fun viewSavedSections() {
+        val key = "saved_sections_" + (currentUri?.toString() ?: "unknown")
+        val saved = getSharedPreferences("fileflow_reader", MODE_PRIVATE)
+            .getStringSet(key, emptySet())?.mapNotNull { it.toIntOrNull() }?.sorted() ?: emptyList()
+        if (saved.isEmpty()) {
+            Toast.makeText(this, "No saved sections yet.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val labels = saved.map { "Page ${it + 1}" }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Saved sections")
+            .setItems(labels) { _, which ->
+                currentPage = saved[which]
+                if (continuousMode) {
+                    val target = continuousPageViews.getOrNull(currentPage)
+                    val scroll = readerContainer as? ScrollView
+                    if (target != null && scroll != null) {
+                        val targetLocation = IntArray(2)
+                        val scrollLocation = IntArray(2)
+                        target.getLocationOnScreen(targetLocation)
+                        scroll.getLocationOnScreen(scrollLocation)
+                        scroll.smoothScrollBy(0, targetLocation[1] - scrollLocation[1])
+                    }
+                } else {
+                    updateCounter()
+                    renderPage()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun viewPageNotes() {
+        val key = "notes_" + (currentUri?.toString() ?: "unknown")
+        val notes = getSharedPreferences("fileflow_reader", MODE_PRIVATE).getString(key, "")
+        AlertDialog.Builder(this)
+            .setTitle("Document notes")
+            .setMessage(if (notes.isNullOrBlank()) "No notes saved yet." else notes)
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
+    private fun showBrightnessControl() {
+        val seek = android.widget.SeekBar(this).apply {
+            max = 100
+            progress = ((window.attributes.screenBrightness.takeIf { it >= 0f } ?: 0.8f) * 100).toInt()
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Screen brightness")
+            .setView(seek)
+            .setPositiveButton("Apply") { _, _ ->
+                window.attributes = window.attributes.apply {
+                    screenBrightness = (seek.progress / 100f).coerceIn(0.05f, 1f)
+                }
+            }
+            .setNeutralButton("System default") { _, _ ->
+                window.attributes = window.attributes.apply { screenBrightness = -1f }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun runOcrOnWholeDocument() {
+        val total = renderer?.pageCount ?: return
+        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val output = StringBuilder()
+        Toast.makeText(this, "Extracting text from ${total} pages…", Toast.LENGTH_LONG).show()
+
+        fun processPage(index: Int) {
+            if (destroyed) {
+                recognizer.close()
+                return
+            }
+            if (index >= total) {
+                recognizer.close()
+                lastOcrText = output.toString().trim()
+                if (lastOcrText.isBlank()) {
+                    Toast.makeText(this, "No readable text was found.", Toast.LENGTH_LONG).show()
+                } else {
+                    AlertDialog.Builder(this)
+                        .setTitle("Extracted document text")
+                        .setMessage(lastOcrText)
+                        .setPositiveButton("Copy") { _, _ ->
+                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("OCR text", lastOcrText))
+                        }
+                        .setNeutralButton("Translate") { _, _ -> translateLastOcrText() }
+                        .setNegativeButton("Close", null)
+                        .show()
+                }
+                return
+            }
+            renderExecutor.execute {
+                val bitmap = try { renderBitmap(index, 1200) } catch (_: Exception) { null }
+                mainHandler.post {
+                    if (bitmap == null) {
+                        output.append("\\n[Page ${index + 1}: could not render]\\n")
+                        processPage(index + 1)
+                    } else {
+                        recognizer.process(InputImage.fromBitmap(bitmap, 0))
+                            .addOnSuccessListener { result ->
+                                if (result.text.isNotBlank()) {
+                                    output.append("\\n--- Page ${index + 1} ---\\n")
+                                    output.append(result.text).append('\\n')
+                                }
+                            }
+                            .addOnCompleteListener {
+                                if (!bitmap.isRecycled) bitmap.recycle()
+                                processPage(index + 1)
+                            }
+                    }
+                }
+            }
+        }
+        processPage(0)
+    }
+
+    private fun activePageImage(): ZoomableImageView? =
+        if (continuousMode) continuousPageViews.getOrNull(currentPage) else pageImage
+
+    private fun exportCurrentPageAsImage() {
+        val bitmap = (activePageImage()?.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+        if (bitmap == null) {
+            Toast.makeText(this, "The current page is not ready.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val output = File(cacheDir, "FileFlow-page-${currentPage + 1}.png")
+            FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            pendingExportFile = output
+            val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "image/png"
+                putExtra(Intent.EXTRA_TITLE, output.name)
+            }
+            startActivityForResult(intent, imageExportRequestCode)
+        } catch (e: Exception) {
+            Toast.makeText(this, "Image export failed: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private fun addPageNote() {
         val input = EditText(this).apply {
             hint = "Write a note for this page"
@@ -358,7 +510,7 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun runOcrOnCurrentPage() {
-        val bitmap = (pageImage.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+        val bitmap = (activePageImage()?.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
         if (bitmap == null) {
             Toast.makeText(this, "Display the page first, then try OCR.", Toast.LENGTH_SHORT).show()
             return
@@ -449,10 +601,15 @@ class PdfViewerActivity : Activity() {
                 val loaded = PDDocument.load(output)
                 try {
                     val permissions = AccessPermission()
-                    val policy = StandardProtectionPolicy(password, password, permissions)
+                    val policy = StandardProtectionPolicy(
+                        java.util.UUID.randomUUID().toString(), password, permissions
+                    )
                     policy.encryptionKeyLength = 128
                     loaded.protect(policy)
-                    loaded.save(output)
+                    val protectedOutput = File(cacheDir, "FileFlow-protected-${System.currentTimeMillis()}.pdf")
+                    loaded.save(protectedOutput)
+                    protectedOutput.copyTo(output, overwrite = true)
+                    protectedOutput.delete()
                 } finally {
                     loaded.close()
                 }
@@ -471,7 +628,7 @@ class PdfViewerActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == exportRequestCode && resultCode == RESULT_OK) {
+        if ((requestCode == exportRequestCode || requestCode == imageExportRequestCode) && resultCode == RESULT_OK) {
             val destination = data?.data ?: return
             val source = pendingExportFile ?: return
             try {
