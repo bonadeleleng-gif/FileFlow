@@ -31,6 +31,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.EditText
 import android.widget.PopupMenu
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.graphics.drawable.GradientDrawable
@@ -182,11 +183,11 @@ class PdfViewerActivity : Activity() {
             )
         )
 
-        root.addView(header, LinearLayout.LayoutParams(
+        rootLayout.addView(header, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(28)
         ))
 
-        root.addView(counterRow, LinearLayout.LayoutParams(
+        rootLayout.addView(counterRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(29)
         ))
 
