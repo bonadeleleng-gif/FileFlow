@@ -76,6 +76,7 @@ class PdfViewerActivity : Activity() {
     private var sepiaEnabled = false
     private var fitWidthEnabled = false
     private var autoRotateEnabled = true
+    private var continuousZoomFactor = 1f
 
     private val backgroundColor = Color.rgb(13, 13, 27)
     private val panelColor = Color.rgb(25, 25, 43)
@@ -757,9 +758,12 @@ class PdfViewerActivity : Activity() {
             val count = if (twoPageMode && index + 1 < total) 2 else 1
             repeat(count) {
                 val pageIndex = index + it
-                val image = ZoomableImageView(this) { direction ->
+                val image = ZoomableImageView(this, { direction ->
                     if (!continuousMode) changePage(direction)
-                }.apply {
+                }, { factor ->
+                    continuousZoomFactor = (continuousZoomFactor * factor).coerceIn(1f, 5f)
+                    continuousPageViews.forEach { it.applySharedZoom(factor) }
+                }).apply {
                     setSwipeNavigationEnabled(false)
                     setBackgroundColor(Color.WHITE)
                     scaleType = ImageView.ScaleType.MATRIX
@@ -1049,7 +1053,8 @@ class PdfViewerActivity : Activity() {
 
     class ZoomableImageView(
         context: Context,
-        private val onPageSwipe: (Int) -> Unit
+        private val onPageSwipe: (Int) -> Unit,
+        private val onSharedZoom: ((Float) -> Unit)? = null
     ) : ImageView(context) {
 
         private val matrixValue = Matrix()
@@ -1078,21 +1083,11 @@ class PdfViewerActivity : Activity() {
             context,
             object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
                 override fun onScale(detector: ScaleGestureDetector): Boolean {
-                    val newScale = (currentScale * detector.scaleFactor)
-                        .coerceIn(baseScale, baseScale * 5f)
-
-                    val factor = newScale / currentScale
-
-                    matrixValue.postScale(
-                        factor,
-                        factor,
-                        detector.focusX,
-                        detector.focusY
-                    )
-
-                    currentScale = newScale
-                    clampImage()
-                    imageMatrix = matrixValue
+                    if (onSharedZoom != null) {
+                        onSharedZoom(detector.scaleFactor)
+                    } else {
+                        applySharedZoom(detector.scaleFactor, detector.focusX, detector.focusY)
+                    }
                     return true
                 }
             }
@@ -1193,6 +1188,17 @@ class PdfViewerActivity : Activity() {
             setImageBitmap(bitmap)
             applySepiaFilter()
             fitImage()
+        }
+
+        // Apply the same zoom multiplier to every page in Continuous mode.
+        fun applySharedZoom(factor: Float, focusX: Float = width / 2f, focusY: Float = height / 2f) {
+            if (drawable == null || width <= 0 || height <= 0) return
+            val newScale = (currentScale * factor).coerceIn(baseScale, baseScale * 5f)
+            val actualFactor = newScale / currentScale
+            matrixValue.postScale(actualFactor, actualFactor, focusX, focusY)
+            currentScale = newScale
+            clampImage()
+            imageMatrix = matrixValue
         }
 
         fun setSepia(enabled: Boolean) {
