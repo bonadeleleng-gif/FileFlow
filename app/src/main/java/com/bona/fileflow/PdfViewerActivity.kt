@@ -724,13 +724,6 @@ class PdfViewerActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(5), dp(4), dp(5))
         }
-        val horizontal = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
-            isFillViewport = true
-            addView(pages, ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
         val total = renderer?.pageCount ?: 0
         val ratios = (0 until total).map { index ->
             synchronized(rendererLock) {
