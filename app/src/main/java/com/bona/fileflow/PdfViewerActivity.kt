@@ -810,9 +810,9 @@ class PdfViewerActivity : Activity() {
             val row = content.getChildAt(rowIndex)
             if (row.bottom >= viewportTop && row.top <= viewportBottom) {
                 if (firstVisible < 0) firstVisible = pageIndex
-                lastVisible = pageIndex + row.childCount - 1
+                lastVisible = pageIndex + (row as? ViewGroup)?.childCount.orZero() - 1
             }
-            pageIndex += row.childCount
+            pageIndex += (row as? ViewGroup)?.childCount.orZero()
             if (row.top > viewportBottom) break
         }
 
