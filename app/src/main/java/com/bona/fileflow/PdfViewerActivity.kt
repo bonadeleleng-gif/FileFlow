@@ -208,14 +208,16 @@ class PdfViewerActivity : Activity() {
         sepiaButton.setOnClickListener {
             sepiaEnabled = !sepiaEnabled
             pageImage.setSepia(sepiaEnabled)
-            sepiaButton.text = if (sepiaEnabled) "Normal" else "Sepia"
+            continuousPageViews.forEach { it.setSepia(sepiaEnabled) }
+            sepiaButton.text = if (sepiaEnabled) "Sepia: On" else "Sepia"
             sepiaButton.isSelected = sepiaEnabled
         }
 
         fitButton.setOnClickListener {
             fitWidthEnabled = !fitWidthEnabled
             pageImage.setFitWidth(fitWidthEnabled)
-            fitButton.text = if (fitWidthEnabled) "Fit page" else "Fit width"
+            continuousPageViews.forEach { it.setFitWidth(fitWidthEnabled) }
+            fitButton.text = if (fitWidthEnabled) "Fit width: On" else "Fit width"
             fitButton.isSelected = fitWidthEnabled
         }
 
@@ -226,14 +228,14 @@ class PdfViewerActivity : Activity() {
             } else {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
-            rotateButton.text = if (orientationLocked) "Unlock rotate" else "Auto rotate"
+            rotateButton.text = if (orientationLocked) "Portrait lock: On" else "Auto rotate"
             rotateButton.isSelected = orientationLocked
         }
 
         scrollButton.setOnClickListener {
             continuousMode = !continuousMode
             if (!continuousMode) twoPageMode = false
-            scrollButton.text = if (continuousMode) "Paged" else "Continuous"
+            scrollButton.text = if (continuousMode) "Continuous: On" else "Continuous"
             scrollButton.isSelected = continuousMode
             spreadButton.isEnabled = continuousMode
             spreadButton.alpha = if (continuousMode) 1f else 0.55f
@@ -244,7 +246,7 @@ class PdfViewerActivity : Activity() {
         spreadButton.setOnClickListener {
             if (!continuousMode) return@setOnClickListener
             twoPageMode = !twoPageMode
-            spreadButton.text = if (twoPageMode) "One page" else "Two pages"
+            spreadButton.text = if (twoPageMode) "Two pages: On" else "Two pages"
             spreadButton.isSelected = twoPageMode
             switchReaderContainer()
         }
@@ -859,12 +861,15 @@ class PdfViewerActivity : Activity() {
             textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            minWidth = dp(78)
+            minWidth = dp(88)
             minHeight = dp(48)
-            setPadding(dp(12), dp(6), dp(12), dp(6))
+            setPadding(dp(14), dp(6), dp(14), dp(6))
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(Color.argb(55, 255, 255, 255)),
-                roundedBackground(panelColor, 10),
+                android.content.res.ColorStateList.valueOf(Color.argb(65, 167, 139, 250)),
+                android.graphics.drawable.StateListDrawable().apply {
+                    addState(intArrayOf(android.R.attr.state_selected), roundedBackground(purpleColor, 12))
+                    addState(intArrayOf(), roundedBackground(panelColor, 12))
+                },
                 null
             )
             isClickable = true
