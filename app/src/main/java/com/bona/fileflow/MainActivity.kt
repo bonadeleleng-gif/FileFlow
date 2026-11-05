@@ -481,6 +481,8 @@ class MainActivity : ComponentActivity() {
             setTextColor(mutedText())
             setPadding(0, 0, 0, dp(12))
         })
+        val chooserDialog = AlertDialog.Builder(this).setTitle("Create new")
+            .setView(chooser).setNegativeButton("Cancel", null).create()
         formats.forEachIndexed { index, label ->
             chooser.addView(TextView(this).apply {
                 text = label
@@ -494,13 +496,12 @@ class MainActivity : ComponentActivity() {
                 }
                 isClickable = true
                 isFocusable = true
-                setOnClickListener { createNewFile(index, ext[index], mime[index]) }
+                setOnClickListener { chooserDialog.dismiss(); createNewFile(index, ext[index], mime[index]) }
             }, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 bottomMargin = dp(8)
             })
         }
-        AlertDialog.Builder(this).setTitle("Create new").setView(chooser)
-            .setNegativeButton("Cancel", null).show()
+        chooserDialog.show()
     }
 
     private fun createNewFile(index: Int, ext: String, mime: String) {
