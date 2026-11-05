@@ -53,6 +53,7 @@ class PdfViewerActivity : Activity() {
     private var renderer: PdfRenderer? = null
     private var fileDescriptor: ParcelFileDescriptor? = null
     private var currentPage = 0
+    private var restorePageFraction = 0f
 
     private lateinit var pageImage: ZoomableImageView
     private lateinit var pageCounter: TextView
@@ -95,6 +96,12 @@ class PdfViewerActivity : Activity() {
         window.statusBarColor = backgroundColor
         window.navigationBarColor = backgroundColor
 
+        currentPage = savedInstanceState?.getInt("reader_page", 0) ?: 0
+        restorePageFraction = savedInstanceState?.getFloat("reader_page_fraction", 0f) ?: 0f
+        sepiaEnabled = savedInstanceState?.getBoolean("reader_sepia", false) ?: false
+        fitWidthEnabled = savedInstanceState?.getBoolean("reader_fit_width", false) ?: false
+        autoRotateEnabled = savedInstanceState?.getBoolean("reader_auto_rotate", true) ?: true
+
         createViewerInterface()
 
         val uri = intent.getParcelableExtra<Uri>("pdf_uri")
@@ -111,8 +118,10 @@ class PdfViewerActivity : Activity() {
             if (fileDescriptor == null) throw Exception("Unable to open PDF")
 
             renderer = PdfRenderer(fileDescriptor!!)
+            currentPage = currentPage.coerceIn(0, (renderer?.pageCount ?: 1) - 1)
             switchReaderContainer()
             updateCounter()
+            restoreReaderPosition()
 
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open this PDF", Toast.LENGTH_LONG).show()
@@ -219,9 +228,17 @@ class PdfViewerActivity : Activity() {
             fitButton.isSelected = fitWidthEnabled
         }
 
-        rotateButton.text = "Auto rotate: On"
-        rotateButton.isSelected = true
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        sepiaButton.text = if (sepiaEnabled) "Sepia: On" else "Sepia"
+        sepiaButton.isSelected = sepiaEnabled
+        fitButton.text = if (fitWidthEnabled) "Fit width: On" else "Fit width"
+        fitButton.isSelected = fitWidthEnabled
+        rotateButton.text = if (autoRotateEnabled) "Auto rotate: On" else "Portrait lock: On"
+        rotateButton.isSelected = autoRotateEnabled
+        requestedOrientation = if (autoRotateEnabled) {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
+        } else {
+            android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        }
         rotateButton.setOnClickListener {
             autoRotateEnabled = !autoRotateEnabled
             requestedOrientation = if (autoRotateEnabled) {
@@ -665,21 +682,48 @@ class PdfViewerActivity : Activity() {
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if ((requestCode == exportRequestCode || requestCode == imageExportRequestCode) && resultCode == RESULT_OK) {
-            val destination = data?.data ?: return
-            val source = pendingExportFile ?: return
-            try {
-                contentResolver.openOutputStream(destination)?.use { out ->
-                    source.inputStream().use { input -> input.copyTo(out) }
+        if (requestCode == exportRequestCode || requestCode == imageExportRequestCode) {
+            val destination = if (resultCode == RESULT_OK) data?.data else null
+            val source = pendingExportFile
+            if (destination != null && source != null) {
+                try {
+                    val output = contentResolver.openOutputStream(destination)
+                        ?: throw IllegalStateException("The selected destination could not be opened.")
+                    output.use { out -> source.inputStream().use { input -> input.copyTo(out) } }
+                    Toast.makeText(this, "File saved successfully", Toast.LENGTH_LONG).show()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Could not save file: ${e.message}", Toast.LENGTH_LONG).show()
                 }
-                Toast.makeText(this, "File saved successfully", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Could not save PDF: ${e.message}", Toast.LENGTH_LONG).show()
-            } finally {
-                source.delete()
-                pendingExportFile = null
             }
+            source?.delete()
+            pendingExportFile = null
         }
+    }
+
+    private fun restoreReaderPosition() {
+        val scroll = readerContainer as? ScrollView ?: return
+        val pageToRestore = currentPage
+        val fraction = restorePageFraction.coerceIn(0f, 1f)
+        scroll.post {
+            val target = continuousPageViews.getOrNull(pageToRestore) ?: return@post
+            scroll.scrollTo(0, target.top + (target.height * fraction).toInt())
+            renderVisibleContinuousPages(scroll)
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("reader_page", currentPage)
+        outState.putBoolean("reader_sepia", sepiaEnabled)
+        outState.putBoolean("reader_fit_width", fitWidthEnabled)
+        outState.putBoolean("reader_auto_rotate", autoRotateEnabled)
+        val scroll = readerContainer as? ScrollView
+        val page = continuousPageViews.getOrNull(currentPage)
+        if (scroll != null && page != null && page.height > 0) {
+            restorePageFraction = ((scroll.scrollY - page.top).toFloat() / page.height)
+                .coerceIn(0f, 1f)
+        }
+        outState.putFloat("reader_page_fraction", restorePageFraction)
     }
 
     private fun switchReaderContainer() {
