@@ -104,7 +104,7 @@ class MainActivity : ComponentActivity() {
                     if (grantedFlags != 0) {
                         try {
                             contentResolver.takePersistableUriPermission(target, grantedFlags)
-                        } catch (_: SecurityException) {
+                        } catch (_: Exception) {
                             // Some document providers grant temporary access only.
                         }
                     }
