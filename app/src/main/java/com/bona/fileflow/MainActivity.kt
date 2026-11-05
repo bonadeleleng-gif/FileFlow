@@ -99,11 +99,21 @@ class MainActivity : ComponentActivity() {
             val source = pendingCreatedFile
             if (target != null && source != null) {
                 try {
-                    val grantedFlags = (data?.flags ?: 0) and
-                        (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-                    if (grantedFlags != 0) {
+                    val resultFlags = data?.flags ?: 0
+                    if ((resultFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
                         try {
-                            contentResolver.takePersistableUriPermission(target, grantedFlags)
+                            contentResolver.takePersistableUriPermission(
+                                target, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                            )
+                        } catch (_: Exception) {
+                            // Some document providers grant temporary access only.
+                        }
+                    }
+                    if ((resultFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
+                        try {
+                            contentResolver.takePersistableUriPermission(
+                                target, Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                            )
                         } catch (_: Exception) {
                             // Some document providers grant temporary access only.
                         }
