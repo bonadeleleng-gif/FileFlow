@@ -793,39 +793,38 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun renderVisibleContinuousPages(scroll: ScrollView) {
-        if (!continuousMode || destroyed || scroll.height <= 0) return
-        val content = scroll.getChildAt(0) as? LinearLayout ?: return
-        val viewportTop = scroll.scrollY - dp(250)
-        val viewportBottom = scroll.scrollY + scroll.height + dp(250)
-        var firstVisible = -1
-        var pageIndex = 0
+        if (!continuousMode || destroyed) return
+        val total = renderer?.pageCount ?: return
+        if (continuousPageViews.isEmpty()) return
 
-        // Measure each row in ScrollView content coordinates. This avoids relying on
-        // screen coordinates of child ImageViews before their first layout.
-        for (rowIndex in 0 until content.childCount) {
-            val row = content.getChildAt(rowIndex)
-            val rowTop = row.top
-            val rowBottom = row.bottom
-            val rowIsNearViewport = rowBottom >= viewportTop && rowTop <= viewportBottom
-
-            if (row is LinearLayout) {
-                for (childIndex in 0 until row.childCount) {
-                    val image = row.getChildAt(childIndex) as? ZoomableImageView ?: continue
-                    val index = pageIndex
-                    if (rowIsNearViewport && image.width > 0 && image.height > 0) {
-                        if (firstVisible == -1) firstVisible = index
-                        if (image.drawable == null && !renderingPages.contains(index)) {
-                            renderContinuousPage(index, image)
-                        }
+        // Use the ScrollView's own scroll offset to find the page at the viewport.
+        // The individual row bounds can be zero during initial layout, so rendering
+        // must not depend on those bounds being available.
+        val content = scroll.getChildAt(0) as? LinearLayout
+        val viewportY = scroll.scrollY + dp(12)
+        var visiblePage = 0
+        if (content != null) {
+            for (rowIndex in 0 until content.childCount) {
+                val row = content.getChildAt(rowIndex)
+                if (row.top <= viewportY && row.bottom >= viewportY && row is LinearLayout) {
+                    val priorRows = (0 until rowIndex).sumOf { rowNum ->
+                        (content.getChildAt(rowNum) as? LinearLayout)?.childCount ?: 0
                     }
-                    pageIndex++
+                    visiblePage = priorRows.coerceIn(0, total - 1)
+                    break
                 }
             }
         }
+        currentPage = visiblePage
+        updateCounter()
 
-        if (firstVisible >= 0 && firstVisible < (renderer?.pageCount ?: 0)) {
-            currentPage = firstVisible
-            updateCounter()
+        // Queue every page once. Rendering is serialized on renderExecutor and each
+        // view is filled as its bitmap completes, avoiding blank pages when viewport
+        // measurements are unavailable or differ after a device rotation.
+        continuousPageViews.forEachIndexed { index, image ->
+            if (index < total && image.drawable == null && !renderingPages.contains(index)) {
+                renderContinuousPage(index, image)
+            }
         }
     }
 
