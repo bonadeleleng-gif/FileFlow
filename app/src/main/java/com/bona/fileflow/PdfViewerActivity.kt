@@ -506,15 +506,26 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun runOcrOnCurrentPage() {
-        val bitmap = (activePageImage()?.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
-        if (bitmap == null) {
+        val sourceBitmap = (activePageImage()?.drawable as? BitmapDrawable)?.bitmap
+        if (sourceBitmap == null || sourceBitmap.isRecycled) {
             Toast.makeText(this, "Display the page first, then try OCR.", Toast.LENGTH_SHORT).show()
             return
         }
+        val ocrBitmap = try {
+            sourceBitmap.copy(Bitmap.Config.ARGB_8888, false)
+        } catch (_: Exception) {
+            null
+        }
+        if (ocrBitmap == null) {
+            Toast.makeText(this, "Could not prepare this page for OCR.", Toast.LENGTH_LONG).show()
+            return
+        }
+
         Toast.makeText(this, "Reading text from this page…", Toast.LENGTH_SHORT).show()
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
+        recognizer.process(InputImage.fromBitmap(ocrBitmap, 0))
             .addOnSuccessListener { result ->
+                if (destroyed || isFinishing) return@addOnSuccessListener
                 lastOcrText = result.text
                 if (lastOcrText.isBlank()) {
                     Toast.makeText(this, "No readable text found on this page.", Toast.LENGTH_LONG).show()
@@ -531,11 +542,15 @@ class PdfViewerActivity : Activity() {
                         .setNegativeButton("Close", null)
                         .show()
                 }
-                recognizer.close()
             }
             .addOnFailureListener {
+                if (!destroyed && !isFinishing) {
+                    Toast.makeText(this, "OCR failed on this page.", Toast.LENGTH_LONG).show()
+                }
+            }
+            .addOnCompleteListener {
+                if (!ocrBitmap.isRecycled) ocrBitmap.recycle()
                 recognizer.close()
-                Toast.makeText(this, "OCR failed on this page.", Toast.LENGTH_LONG).show()
             }
     }
 
