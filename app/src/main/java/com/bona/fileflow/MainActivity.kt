@@ -229,13 +229,16 @@ class MainActivity : ComponentActivity() {
                 setPadding(dp(13), dp(9), dp(13), dp(9))
                 if (selectedTab == tab) setBackgroundColor(purple)
                 setOnClickListener {
-                    selectedTab = tab
                     if (tab == "Private" && !privateUnlocked) {
+                        // Do not switch the data filter until the PIN is verified.
+                        // Otherwise search/sort redraws could reveal private items after cancel.
                         verifyPrivatePin {
                             privateUnlocked = true
+                            selectedTab = "Private"
                             createHomeScreen()
                         }
                     } else {
+                        selectedTab = tab
                         createHomeScreen()
                     }
                 }
