@@ -266,7 +266,7 @@ class PdfViewerActivity : Activity() {
             isHorizontalScrollBarEnabled = false
             isFillViewport = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            addView(controlsRow, android.widget.HorizontalScrollView.LayoutParams(
+            addView(controlsRow, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
         }
