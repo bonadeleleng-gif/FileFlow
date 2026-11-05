@@ -1146,6 +1146,15 @@ class MainActivity : ComponentActivity() {
         pending.forEach { calculateDocumentHashInBackground(it) }
     }
 
+    override fun onStop() {
+        if (selectedTab == "Private") {
+            privateUnlocked = false
+            selectedTab = "All"
+            if (!isFinishing && ::contentArea.isInitialized) renderDocuments()
+        }
+        super.onStop()
+    }
+
     override fun onDestroy() {
         backgroundExecutor.shutdownNow()
         super.onDestroy()
