@@ -42,7 +42,7 @@ jobs:
           key: fileflow-debug-signing-key-v1
 
       - name: Build APK
-        run: gradle assembleDebug
+        run: gradle lintDebug testDebugUnitTest assembleDebug
 
       - name: Save APK
         uses: actions/upload-artifact@v4
