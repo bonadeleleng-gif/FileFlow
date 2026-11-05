@@ -1202,7 +1202,7 @@ class PdfViewerActivity : Activity() {
             if (drawable != null) fitImage()
         }
 
-        private fun fitImage() {
+        override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {\n            super.onSizeChanged(w, h, oldw, oldh)\n            if (w > 0 && h > 0 && drawable != null) {\n                post { fitImage() }\n            }\n        }\n\n        private fun fitImage() {
             val image = drawable ?: return
 
             val imageWidth = image.intrinsicWidth.toFloat()
