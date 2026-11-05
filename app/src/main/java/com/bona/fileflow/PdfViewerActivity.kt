@@ -221,11 +221,11 @@ class PdfViewerActivity : Activity() {
 
         rotateButton.text = "Auto rotate: On"
         rotateButton.isSelected = true
-        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
         rotateButton.setOnClickListener {
             autoRotateEnabled = !autoRotateEnabled
             requestedOrientation = if (autoRotateEnabled) {
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR
             } else {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
