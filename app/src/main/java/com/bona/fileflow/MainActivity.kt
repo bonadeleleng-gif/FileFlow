@@ -811,6 +811,11 @@ class MainActivity : ComponentActivity() {
         val field = EditText(this).apply {
             hint = if (stored == null) "Create a PIN (4–8 digits)" else "Enter your PIN"
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            filters = arrayOf(android.text.InputFilter.LengthFilter(8))
+            setTextColor(android.graphics.Color.rgb(245, 243, 255))
+            setHintTextColor(android.graphics.Color.rgb(165, 155, 190))
+            backgroundTintList = android.content.res.ColorStateList.valueOf(android.graphics.Color.rgb(167, 139, 250))
+            setPadding(dp(12), dp(12), dp(12), dp(12))
         }
         AlertDialog.Builder(this)
             .setTitle(if (stored == null) "Set private folder PIN" else "Unlock private folder")
