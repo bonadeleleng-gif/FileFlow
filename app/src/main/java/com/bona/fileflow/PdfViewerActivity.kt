@@ -35,6 +35,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.BitmapDrawable
 import java.util.concurrent.Executors
 import java.io.File
 import java.io.FileOutputStream
@@ -70,6 +71,8 @@ class PdfViewerActivity : Activity() {
     private var continuousMode = true
     private val continuousPageViews = mutableListOf<ZoomableImageView>()
     private val renderingPages = mutableSetOf<Int>()
+    private var continuousPreloadStart = 0
+    private var continuousPreloadEnd = -1
     private var sepiaEnabled = false
     private var fitWidthEnabled = false
     private var autoRotateEnabled = true
@@ -590,7 +593,7 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun exportCurrentPage(protect: Boolean) {
-        val bitmap = (pageImage.drawable as? android.graphics.drawable.BitmapDrawable)?.bitmap
+        val bitmap = (activePageImage()?.drawable as? BitmapDrawable)?.bitmap
         if (bitmap == null) {
             Toast.makeText(this, "The current page is not ready.", Toast.LENGTH_SHORT).show()
             return
@@ -681,8 +684,11 @@ class PdfViewerActivity : Activity() {
 
     private fun switchReaderContainer() {
         readerContainer?.let { rootLayout.removeView(it) }
+        continuousPageViews.forEach { releasePageBitmap(it) }
         continuousPageViews.clear()
         renderingPages.clear()
+        continuousPreloadStart = 0
+        continuousPreloadEnd = -1
 
         val next: View = if (continuousMode) buildContinuousReader() else imageContainer
         readerContainer = next
@@ -797,11 +803,16 @@ class PdfViewerActivity : Activity() {
         currentPage = firstVisible.coerceIn(0, total - 1)
         updateCounter()
 
-        // Render only the visible pages and a small two-page buffer. Rendering
-        // the entire document up front serialized every page behind the scroll,
-        // causing severe jank on long PDFs.
+        // Keep only visible pages and a small nearby buffer in memory. Without
+        // releasing pages left behind, scrolling through a long PDF would retain
+        // every rendered bitmap and eventually risk an out-of-memory crash.
         val preloadStart = (firstVisible - 2).coerceAtLeast(0)
         val preloadEnd = (lastVisible + 2).coerceAtMost(total - 1)
+        continuousPreloadStart = preloadStart
+        continuousPreloadEnd = preloadEnd
+        continuousPageViews.forEachIndexed { index, image ->
+            if (index !in preloadStart..preloadEnd) releasePageBitmap(image)
+        }
         for (index in preloadStart..preloadEnd) {
             val image = continuousPageViews.getOrNull(index) ?: continue
             if (image.drawable == null && !renderingPages.contains(index)) {
@@ -820,7 +831,8 @@ class PdfViewerActivity : Activity() {
                 mainHandler.post {
                     renderingPages.remove(index)
                     val isCurrentPageView = continuousPageViews.getOrNull(index) === image
-                    if (!destroyed && continuousMode && isCurrentPageView && bitmap != null) {
+                    if (!destroyed && continuousMode && isCurrentPageView &&
+                        index in continuousPreloadStart..continuousPreloadEnd && bitmap != null) {
                         image.displayBitmap(bitmap)
                         image.setSepia(sepiaEnabled)
                         image.setFitWidth(fitWidthEnabled)
@@ -841,7 +853,8 @@ class PdfViewerActivity : Activity() {
                 mainHandler.post {
                     renderingPages.remove(index)
                     val isCurrentPageView = continuousPageViews.getOrNull(index) === image
-                    if (!destroyed && continuousMode && isCurrentPageView) {
+                    if (!destroyed && continuousMode && isCurrentPageView &&
+                        index in continuousPreloadStart..continuousPreloadEnd) {
                         image.setBackgroundColor(Color.rgb(255, 230, 230))
                         Toast.makeText(
                             this,
@@ -852,6 +865,12 @@ class PdfViewerActivity : Activity() {
                 }
             }
         }
+    }
+
+    private fun releasePageBitmap(image: ZoomableImageView) {
+        val bitmap = (image.drawable as? BitmapDrawable)?.bitmap
+        image.setImageDrawable(null)
+        if (bitmap != null && !bitmap.isRecycled) bitmap.recycle()
     }
 
     private fun renderBitmap(pageIndex: Int, targetWidth: Int): Bitmap? {
@@ -1005,6 +1024,8 @@ class PdfViewerActivity : Activity() {
     override fun onDestroy() {
         destroyed = true
         renderExecutor.shutdownNow()
+        continuousPageViews.forEach { releasePageBitmap(it) }
+        continuousPageViews.clear()
 
         synchronized(rendererLock) {
             renderer?.close()
