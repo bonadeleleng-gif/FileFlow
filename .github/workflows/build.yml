@@ -36,7 +36,8 @@ jobs:
         run: mkdir -p ~/.android
 
       - name: Restore stable debug signing key
-        uses: actions/cache@v4
+        id: restore-debug-key
+        uses: actions/cache/restore@v4
         with:
           path: /home/runner/.android/debug.keystore
           key: fileflow-debug-signing-key-v1
@@ -59,6 +60,13 @@ jobs:
 
       - name: Build APK
         run: gradle lintDebug testDebugUnitTest assembleDebug
+
+      - name: Save stable debug signing key
+        if: always() && steps.restore-debug-key.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: /home/runner/.android/debug.keystore
+          key: fileflow-debug-signing-key-v1
 
       - name: Save APK
         uses: actions/upload-artifact@v4
