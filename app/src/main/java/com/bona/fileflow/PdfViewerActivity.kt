@@ -793,28 +793,37 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun renderVisibleContinuousPages(scroll: ScrollView) {
-        if (!continuousMode || destroyed) return
-        val viewport = IntArray(2)
-        scroll.getLocationOnScreen(viewport)
-        val top = viewport[1] - dp(250)
-        val bottom = viewport[1] + scroll.height + dp(250)
+        if (!continuousMode || destroyed || scroll.height <= 0) return
+        val content = scroll.getChildAt(0) as? LinearLayout ?: return
+        val viewportTop = scroll.scrollY - dp(250)
+        val viewportBottom = scroll.scrollY + scroll.height + dp(250)
         var firstVisible = -1
+        var pageIndex = 0
 
-        continuousPageViews.forEachIndexed { index, image ->
-            val location = IntArray(2)
-            image.getLocationOnScreen(location)
-            val visible = location[1] + image.height >= top && location[1] <= bottom
-            if (visible && firstVisible == -1) firstVisible = index
-            if (visible && image.drawable == null) renderContinuousPage(index, image)
-            if (!visible && image.drawable != null) {
-                val drawable = image.drawable
-                image.setImageDrawable(null)
-                if (drawable is android.graphics.drawable.BitmapDrawable) {
-                    drawable.bitmap?.let { if (!it.isRecycled) it.recycle() }
+        // Measure each row in ScrollView content coordinates. This avoids relying on
+        // screen coordinates of child ImageViews before their first layout.
+        for (rowIndex in 0 until content.childCount) {
+            val row = content.getChildAt(rowIndex)
+            val rowTop = row.top
+            val rowBottom = row.bottom
+            val rowIsNearViewport = rowBottom >= viewportTop && rowTop <= viewportBottom
+
+            if (row is LinearLayout) {
+                for (childIndex in 0 until row.childCount) {
+                    val image = row.getChildAt(childIndex) as? ZoomableImageView ?: continue
+                    val index = pageIndex
+                    if (rowIsNearViewport && image.width > 0 && image.height > 0) {
+                        if (firstVisible == -1) firstVisible = index
+                        if (image.drawable == null && !renderingPages.contains(index)) {
+                            renderContinuousPage(index, image)
+                        }
+                    }
+                    pageIndex++
                 }
             }
         }
-        if (firstVisible >= 0) {
+
+        if (firstVisible >= 0 && firstVisible < (renderer?.pageCount ?: 0)) {
             currentPage = firstVisible
             updateCounter()
         }
