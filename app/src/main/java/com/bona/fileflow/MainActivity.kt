@@ -590,8 +590,10 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Cancel", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                var temporaryFile: File? = null
                 try {
                     val file = File(cacheDir, "created-" + System.currentTimeMillis() + "." + ext)
+                    temporaryFile = file
                     val content = editor.text.toString()
                     when (ext) {
                         "docx" -> makeDocx(file, content)
@@ -601,6 +603,8 @@ class MainActivity : ComponentActivity() {
                     }
                     pendingCreatedFile = file
                     val safeName = name.text.toString().trim().ifBlank { "Untitled" }
+                        .replace(Regex("[\\\\/:*?\\"<>|]"), "_")
+                        .ifBlank { "Untitled" }
                     val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
                         type = mime
@@ -609,6 +613,8 @@ class MainActivity : ComponentActivity() {
                     startActivityForResult(save, createFileRequestCode)
                     dialog.dismiss()
                 } catch (e: Exception) {
+                    temporaryFile?.delete()
+                    if (pendingCreatedFile === temporaryFile) pendingCreatedFile = null
                     Toast.makeText(this, "Could not create file: " + e.message, Toast.LENGTH_LONG).show()
                 }
             }
@@ -718,7 +724,10 @@ class MainActivity : ComponentActivity() {
 
     private fun addDocument(uri: Uri) {
         val name = queryName(uri) ?: "Untitled document"
-        val mime = contentResolver.getType(uri) ?: guessMime(name)
+        val detectedMime = contentResolver.getType(uri)
+        val mime = if (detectedMime.isNullOrBlank() || detectedMime == "application/octet-stream") {
+            guessMime(name)
+        } else detectedMime
         documents.removeAll { it.uri == uri.toString() }
         documents.add(0, DocumentItem(
             uri.toString(), name, mime, System.currentTimeMillis(), false
@@ -730,7 +739,9 @@ class MainActivity : ComponentActivity() {
     private fun openDocumentItem(uriString: String) {
         val item = documents.firstOrNull { it.uri == uriString } ?: return
         val uri = Uri.parse(uriString)
-        val mime = item.mime.ifBlank { "*/*" }
+        val mime = item.mime.takeIf {
+            it.isNotBlank() && it != "application/octet-stream"
+        } ?: guessMime(item.name).ifBlank { "*/*" }
         if (mime == "application/pdf" || item.name.endsWith(".pdf", true)) {
             startActivity(Intent(this, PdfViewerActivity::class.java).apply {
                 putExtra("pdf_uri", uri)
