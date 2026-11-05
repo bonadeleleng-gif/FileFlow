@@ -165,9 +165,9 @@ class PdfViewerActivity : Activity() {
 
         counterRow.addView(pageCounter)
 
-        pageImage = ZoomableImageView(this) { direction ->
+        pageImage = ZoomableImageView(this, { direction ->
             changePage(direction)
-        }
+        })
 
         imageContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
