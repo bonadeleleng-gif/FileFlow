@@ -11,6 +11,8 @@ import android.graphics.pdf.PdfDocument
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -31,6 +33,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import android.provider.DocumentsContract
+import java.util.concurrent.Executors
 
 class MainActivity : ComponentActivity() {
 
@@ -48,6 +51,8 @@ class MainActivity : ComponentActivity() {
 
     private val prefs by lazy { getSharedPreferences("fileflow_library", MODE_PRIVATE) }
     private val documents = mutableListOf<DocumentItem>()
+    private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var contentArea: LinearLayout
     private lateinit var searchField: EditText
     private lateinit var themeButton: TextView
@@ -101,6 +106,9 @@ class MainActivity : ComponentActivity() {
                     Toast.makeText(this, "Could not save: " + e.message, Toast.LENGTH_LONG).show()
                 } finally { source.delete(); pendingCreatedFile = null }
             }
+        } else if (requestCode == createFileRequestCode) {
+            pendingCreatedFile?.delete()
+            pendingCreatedFile = null
         } else if (requestCode == convertPdfRequestCode && resultCode == RESULT_OK) {
             val destination = data?.data
             val source = pendingConvertedFile
@@ -125,6 +133,7 @@ class MainActivity : ComponentActivity() {
         loadDocuments()
         lightMode = prefs.getBoolean("light_mode", false)
         createHomeScreen()
+        backfillDocumentHashes()
     }
 
     private fun bg(): Int = if (lightMode) lightBackground else darkBackground
@@ -455,6 +464,7 @@ class MainActivity : ComponentActivity() {
         try {
             visit(DocumentsContract.getTreeDocumentId(treeUri), 0)
             saveDocuments()
+            backfillDocumentHashes()
             renderDocuments()
             Toast.makeText(this, added.toString() + " new files added from the selected folder.", Toast.LENGTH_LONG).show()
         } catch (e: Exception) {
@@ -666,10 +676,10 @@ class MainActivity : ComponentActivity() {
         val mime = contentResolver.getType(uri) ?: guessMime(name)
         documents.removeAll { it.uri == uri.toString() }
         documents.add(0, DocumentItem(
-            uri.toString(), name, mime, System.currentTimeMillis(), false,
-            contentHash = calculateHash(uri)
+            uri.toString(), name, mime, System.currentTimeMillis(), false
         ))
         saveDocuments()
+        calculateDocumentHashInBackground(uri.toString())
     }
 
     private fun openDocumentItem(uriString: String) {
@@ -975,18 +985,34 @@ class MainActivity : ComponentActivity() {
                 ))
             }
         } catch (_: Exception) { }
-        var hashesChanged = false
-        documents.indices.forEach { index ->
-            val item = documents[index]
-            if (item.contentHash.isBlank() && !item.isPrivate && !item.isDeleted) {
-                val hash = calculateHash(Uri.parse(item.uri))
-                if (hash.isNotBlank()) {
-                    documents[index] = item.copy(contentHash = hash)
-                    hashesChanged = true
+    }
+
+    private fun calculateDocumentHashInBackground(uriString: String) {
+        backgroundExecutor.execute {
+            val hash = calculateHash(Uri.parse(uriString))
+            if (hash.isBlank()) return@execute
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                val index = documents.indexOfFirst { it.uri == uriString }
+                if (index >= 0 && documents[index].contentHash.isBlank()) {
+                    documents[index] = documents[index].copy(contentHash = hash)
+                    saveDocuments()
+                    if (selectedTab == "Duplicates") renderDocuments()
                 }
             }
         }
-        if (hashesChanged) saveDocuments()
+    }
+
+    private fun backfillDocumentHashes() {
+        val pending = documents.filter {
+            it.contentHash.isBlank() && !it.isPrivate && !it.isDeleted
+        }.map { it.uri }
+        pending.forEach { calculateDocumentHashInBackground(it) }
+    }
+
+    override fun onDestroy() {
+        backgroundExecutor.shutdownNow()
+        super.onDestroy()
     }
 
     private fun saveDocuments() {
