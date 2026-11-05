@@ -110,8 +110,8 @@ class PdfViewerActivity : Activity() {
             if (fileDescriptor == null) throw Exception("Unable to open PDF")
 
             renderer = PdfRenderer(fileDescriptor!!)
+            switchReaderContainer()
             updateCounter()
-            renderPage()
 
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open this PDF", Toast.LENGTH_LONG).show()
@@ -264,11 +264,6 @@ class PdfViewerActivity : Activity() {
 
         rootLayout.addView(controlsScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
-        ))
-
-        readerContainer = imageContainer
-        rootLayout.addView(imageContainer, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
         ))
 
         setContentView(rootLayout)
