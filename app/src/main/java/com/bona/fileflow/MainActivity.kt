@@ -496,6 +496,7 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 scanError = e.message ?: "Unknown folder access error"
             }
+            val errorMessage = scanError
 
             mainHandler.post {
                 if (isFinishing || isDestroyed) return@post
@@ -509,10 +510,10 @@ class MainActivity : ComponentActivity() {
                 saveDocuments()
                 backfillDocumentHashes()
                 renderDocuments()
-                if (scanError != null) {
+                if (errorMessage != null) {
                     Toast.makeText(
                         this,
-                        "Folder scan stopped: $scanError. Added $added files found before the error.",
+                        "Folder scan stopped: $errorMessage. Added $added files found before the error.",
                         Toast.LENGTH_LONG
                     ).show()
                 } else {
