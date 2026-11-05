@@ -653,7 +653,7 @@ class MainActivity : ComponentActivity() {
 
     private fun makeDocx(file: File, text: String) {
         val paragraphs = text.lines().joinToString("") { line ->
-            "<w:p><w:r><w:t>" + xmlEscape(line) + "</w:t></w:r></w:p>"
+            "<w:p><w:r><w:t xml:space=\"preserve\">" + xmlEscape(line) + "</w:t></w:r></w:p>"
         }
         writeOfficeZip(file, mapOf(
             "[Content_Types].xml" to """<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>""",
@@ -673,7 +673,7 @@ class MainActivity : ComponentActivity() {
                     n = (n - 1) / 26
                 }
                 val reference = column + (rowIndex + 1)
-                """<c r="$reference" t="inlineStr"><is><t>""" + xmlEscape(value.trim()) + """</t></is></c>"""
+                """<c r="$reference" t="inlineStr"><is><t xml:space="preserve">""" + xmlEscape(value) + """</t></is></c>"""
             }.joinToString("")
             """<row r="${rowIndex + 1}">$cells</row>"""
         }.joinToString("")
