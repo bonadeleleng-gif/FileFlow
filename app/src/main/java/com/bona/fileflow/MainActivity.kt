@@ -1060,9 +1060,14 @@ class MainActivity : ComponentActivity() {
             val digest = MessageDigest.getInstance("SHA-256")
             contentResolver.openInputStream(uri)?.use { input ->
                 val buffer = ByteArray(8192)
+                var totalBytes = 0L
                 while (true) {
                     val count = input.read(buffer)
-                    if (count <= 0) break
+                    if (count < 0) break
+                    if (count == 0) continue
+                    totalBytes += count
+                    // Duplicate detection should not scan huge media files in the background.
+                    if (totalBytes > 100L * 1024L * 1024L) return ""
                     digest.update(buffer, 0, count)
                 }
             } ?: return ""
