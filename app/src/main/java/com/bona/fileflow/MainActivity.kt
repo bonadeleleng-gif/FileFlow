@@ -1021,7 +1021,7 @@ class MainActivity : ComponentActivity() {
                             ).show()
                             return@post
                         }
-                        documents[index] = item.copy(
+                        documents[index] = documents[index].copy(
                             uri = privateUri.toString(),
                             isPrivate = true,
                             privatePath = destination.absolutePath
