@@ -779,7 +779,16 @@ class PdfViewerActivity : Activity() {
         }
         scroll.addView(pages)
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> renderVisibleContinuousPages(scroll) }
+        scroll.post { renderVisibleContinuousPages(scroll) }
         pages.post { renderVisibleContinuousPages(scroll) }
+        scroll.viewTreeObserver.addOnGlobalLayoutListener(object : android.view.ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                if (scroll.viewTreeObserver.isAlive) {
+                    scroll.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                }
+                renderVisibleContinuousPages(scroll)
+            }
+        })
         return scroll
     }
 
