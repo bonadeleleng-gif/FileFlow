@@ -968,29 +968,39 @@ class MainActivity : ComponentActivity() {
 
     private fun moveToPrivateFolder(item: DocumentItem) {
         verifyPrivatePin {
+            var destination: File? = null
+            var savedAsPrivate = false
             try {
                 val folder = File(filesDir, "private_documents")
-                if (!folder.exists()) folder.mkdirs()
+                if (!folder.exists() && !folder.mkdirs()) {
+                    throw IllegalStateException("Could not create the private folder.")
+                }
                 val safeName = item.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-                val destination = File(folder, "${System.currentTimeMillis()}_$safeName")
-                contentResolver.openInputStream(Uri.parse(item.uri))!!.use { input ->
-                    destination.outputStream().use { output -> input.copyTo(output) }
+                val privateFile = File(folder, "${System.currentTimeMillis()}_$safeName")
+                destination = privateFile
+                val source = contentResolver.openInputStream(Uri.parse(item.uri))
+                    ?: throw IllegalStateException("Could not read the selected document.")
+                source.use { input ->
+                    privateFile.outputStream().use { output -> input.copyTo(output) }
                 }
                 val privateUri = FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", destination
+                    this, "$packageName.fileprovider", privateFile
                 )
                 val index = documents.indexOfFirst { it.uri == item.uri }
-                if (index >= 0) {
-                    documents[index] = item.copy(
-                        uri = privateUri.toString(),
-                        isPrivate = true,
-                        privatePath = destination.absolutePath
-                    )
-                    saveDocuments()
-                    renderDocuments()
+                if (index < 0) {
+                    throw IllegalStateException("This document is no longer in your library.")
                 }
+                documents[index] = item.copy(
+                    uri = privateUri.toString(),
+                    isPrivate = true,
+                    privatePath = privateFile.absolutePath
+                )
+                savedAsPrivate = true
+                saveDocuments()
+                renderDocuments()
                 Toast.makeText(this, "Private copy created inside FileFlow.", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
+                if (!savedAsPrivate) destination?.delete()
                 Toast.makeText(this, "Could not create private copy: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
