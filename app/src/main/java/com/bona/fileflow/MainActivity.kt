@@ -839,9 +839,11 @@ class MainActivity : ComponentActivity() {
 
     private fun decodeImageForPdf(uri: Uri): android.graphics.Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        contentResolver.openInputStream(uri)?.use {
+        val boundsInput = contentResolver.openInputStream(uri)
+            ?: throw IllegalStateException("Could not open image")
+        boundsInput.use {
             BitmapFactory.decodeStream(it, null, bounds)
-        } ?: throw IllegalStateException("Could not open image")
+        }
 
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
             throw IllegalArgumentException("The selected image is invalid.")
