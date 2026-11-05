@@ -463,17 +463,21 @@ class PdfViewerActivity : Activity() {
             Toast.makeText(this, "The current page is not ready.", Toast.LENGTH_SHORT).show()
             return
         }
+        var output: File? = null
         try {
-            val output = File(cacheDir, "FileFlow-page-${currentPage + 1}.png")
-            FileOutputStream(output).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            pendingExportFile = output
+            val imageFile = File(cacheDir, "FileFlow-page-${currentPage + 1}.png")
+            output = imageFile
+            FileOutputStream(imageFile).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            pendingExportFile = imageFile
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "image/png"
-                putExtra(Intent.EXTRA_TITLE, output.name)
+                putExtra(Intent.EXTRA_TITLE, imageFile.name)
             }
             startActivityForResult(intent, imageExportRequestCode)
         } catch (e: Exception) {
+            output?.delete()
+            pendingExportFile = null
             Toast.makeText(this, "Image export failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
@@ -640,19 +644,25 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun createPagePdf(bitmap: Bitmap, password: String?) {
+        var output: File? = null
+        var protectedOutput: File? = null
         try {
-            val output = File(cacheDir, "FileFlow-page-${currentPage + 1}.pdf")
+            val pageFile = File(cacheDir, "FileFlow-page-${currentPage + 1}.pdf")
+            output = pageFile
             val document = PdfDocument()
-            val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, 1).create()
-            val page = document.startPage(pageInfo)
-            page.canvas.drawBitmap(bitmap, 0f, 0f, null)
-            document.finishPage(page)
-            FileOutputStream(output).use { document.writeTo(it) }
-            document.close()
+            try {
+                val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, 1).create()
+                val page = document.startPage(pageInfo)
+                page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+                document.finishPage(page)
+                FileOutputStream(pageFile).use { document.writeTo(it) }
+            } finally {
+                document.close()
+            }
 
             if (password != null) {
                 PDFBoxResourceLoader.init(applicationContext)
-                val loaded = PDDocument.load(output)
+                val loaded = PDDocument.load(pageFile)
                 try {
                     val permissions = AccessPermission()
                     val policy = StandardProtectionPolicy(
@@ -660,23 +670,32 @@ class PdfViewerActivity : Activity() {
                     )
                     policy.encryptionKeyLength = 128
                     loaded.protect(policy)
-                    val protectedOutput = File(cacheDir, "FileFlow-protected-${System.currentTimeMillis()}.pdf")
-                    loaded.save(protectedOutput)
-                    protectedOutput.copyTo(output, overwrite = true)
-                    protectedOutput.delete()
+                    val encryptedFile = File(
+                        cacheDir, "FileFlow-protected-${System.currentTimeMillis()}.pdf"
+                    )
+                    protectedOutput = encryptedFile
+                    loaded.save(encryptedFile)
+                    encryptedFile.copyTo(pageFile, overwrite = true)
                 } finally {
                     loaded.close()
+                    protectedOutput?.delete()
+                    protectedOutput = null
                 }
             }
-            pendingExportFile = output
+            pendingExportFile = pageFile
             val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/pdf"
-                putExtra(Intent.EXTRA_TITLE, output.name)
+                putExtra(Intent.EXTRA_TITLE, pageFile.name)
             }
             startActivityForResult(intent, exportRequestCode)
         } catch (e: Exception) {
-            Toast.makeText(this, "PDF export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG).show()
+            output?.delete()
+            protectedOutput?.delete()
+            pendingExportFile = null
+            Toast.makeText(
+                this, "PDF export failed: ${e.message ?: "unknown error"}", Toast.LENGTH_LONG
+            ).show()
         }
     }
 
