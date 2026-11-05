@@ -71,6 +71,7 @@ class PdfViewerActivity : Activity() {
     private var readerContainer: View? = null
     private var continuousMode = true
     private val continuousPageViews = mutableListOf<ZoomableImageView>()
+    private var annotationView: ZoomableImageView? = null
     private val renderingPages = mutableSetOf<Int>()
     private var continuousPreloadStart = 0
     private var continuousPreloadEnd = -1
@@ -311,10 +312,12 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun setAnnotationMode(mode: String?) {
+        annotationView?.setAnnotationMode(null)
         val target = if (continuousMode) {
             continuousPageViews.getOrNull(currentPage)
         } else pageImage
         target?.setAnnotationMode(mode)
+        annotationView = if (mode == null) null else target
         Toast.makeText(
             this,
             when (mode) {
@@ -762,6 +765,8 @@ class PdfViewerActivity : Activity() {
 
     private fun switchReaderContainer() {
         readerContainer?.let { rootLayout.removeView(it) }
+        annotationView?.setAnnotationMode(null)
+        annotationView = null
         continuousPageViews.forEach { releasePageBitmap(it) }
         continuousPageViews.clear()
         renderingPages.clear()
