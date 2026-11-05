@@ -859,6 +859,7 @@ class PdfViewerActivity : Activity() {
                         image.displayBitmap(bitmap)
                         image.setSepia(sepiaEnabled)
                         image.setFitWidth(fitWidthEnabled)
+                        if (continuousZoomFactor > 1f) image.applySharedZoom(continuousZoomFactor)
                         image.invalidate()
                     } else {
                         bitmap?.recycle()
