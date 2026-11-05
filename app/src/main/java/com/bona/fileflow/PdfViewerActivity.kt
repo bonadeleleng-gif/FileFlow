@@ -286,43 +286,36 @@ class PdfViewerActivity : Activity() {
     }
 
     private fun showToolsMenu(anchor: View) {
-        val menu = PopupMenu(this, anchor)
-        menu.menu.add("Save this section")
-        menu.menu.add("View saved sections")
-        menu.menu.add("Add note")
-        menu.menu.add("View notes")
-        menu.menu.add("Draw on page")
-        menu.menu.add("Highlight")
-        menu.menu.add("Underline")
-        menu.menu.add("Stop annotating")
-        menu.menu.add("OCR this page")
-        menu.menu.add("OCR entire PDF")
-        menu.menu.add("Translate OCR text")
-        menu.menu.add("Screen brightness")
-        menu.menu.add("Export this page as PDF")
-        menu.menu.add("Export this page as image")
-        menu.menu.add("Protect entire PDF with password")
-        menu.setOnMenuItemClickListener { item ->
-            when (item.title.toString()) {
-                "Save this section" -> saveCurrentSection()
-                "View saved sections" -> viewSavedSections()
-                "Add note" -> addPageNote()
-                "View notes" -> viewPageNotes()
-                "Draw on page" -> setAnnotationMode("draw")
-                "Highlight" -> setAnnotationMode("highlight")
-                "Underline" -> setAnnotationMode("underline")
-                "Stop annotating" -> setAnnotationMode(null)
-                "OCR this page" -> runOcrOnCurrentPage()
-                "OCR entire PDF" -> runOcrOnWholeDocument()
-                "Translate OCR text" -> translateLastOcrText()
-                "Screen brightness" -> showBrightnessControl()
-                "Export this page as PDF" -> exportCurrentPage(false)
-                "Export this page as image" -> exportCurrentPageAsImage()
-                "Protect entire PDF with password" -> protectEntirePdf()
+        val items = arrayOf(
+            "Save this section", "View saved sections", "Add note", "View notes",
+            "Draw on page", "Highlight", "Underline", "Stop annotating",
+            "OCR this page", "OCR entire PDF", "Translate OCR text",
+            "Screen brightness", "Export this page as PDF",
+            "Export this page as image", "Protect entire PDF with password"
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Reader tools")
+            .setItems(items) { _, which ->
+                when (items[which]) {
+                    "Save this section" -> saveCurrentSection()
+                    "View saved sections" -> viewSavedSections()
+                    "Add note" -> addPageNote()
+                    "View notes" -> viewPageNotes()
+                    "Draw on page" -> setAnnotationMode("draw")
+                    "Highlight" -> setAnnotationMode("highlight")
+                    "Underline" -> setAnnotationMode("underline")
+                    "Stop annotating" -> setAnnotationMode(null)
+                    "OCR this page" -> runOcrOnCurrentPage()
+                    "OCR entire PDF" -> runOcrOnWholeDocument()
+                    "Translate OCR text" -> translateLastOcrText()
+                    "Screen brightness" -> showBrightnessControl()
+                    "Export this page as PDF" -> exportCurrentPage(false)
+                    "Export this page as image" -> exportCurrentPageAsImage()
+                    "Protect entire PDF with password" -> protectEntirePdf()
+                }
             }
-            true
-        }
-        menu.show()
+            .setNegativeButton("Close", null)
+            .show()
     }
 
     private fun setAnnotationMode(mode: String?) {
@@ -826,6 +819,8 @@ class PdfViewerActivity : Activity() {
                     renderingPages.remove(index)
                     if (!destroyed && continuousMode && image.parent != null && bitmap != null) {
                         image.displayBitmap(bitmap)
+                        image.setSepia(sepiaEnabled)
+                        image.setFitWidth(fitWidthEnabled)
                         (readerContainer as? ScrollView)?.let { renderVisibleContinuousPages(it) }
                     } else {
                         bitmap?.recycle()
@@ -953,6 +948,8 @@ class PdfViewerActivity : Activity() {
                         bitmap != null
                     ) {
                         pageImage.displayBitmap(bitmap)
+                        pageImage.setSepia(sepiaEnabled)
+                        pageImage.setFitWidth(fitWidthEnabled)
                     } else {
                         bitmap?.recycle()
                     }
