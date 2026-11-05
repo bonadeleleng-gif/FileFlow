@@ -880,7 +880,7 @@ class PdfViewerActivity : Activity() {
             try {
                 val width = targetWidth.coerceIn(500, 1800)
                 val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
-                val result = Bitmap.createBitmap(width, height, Bitmap.Config.RGB_565)
+                val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 Canvas(result).drawColor(Color.WHITE)
                 page.render(result, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
                 result
