@@ -8,5 +8,22 @@
         <item name="android:navigationBarColor">#0D0D1B</item>
         <item name="android:windowBackground">#0D0D1B</item>
         <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:alertDialogTheme">@style/FileFlowAlertDialog</item>
+        <item name="android:popupBackground">@drawable/fileflow_popup_background</item>
+    </style>
+
+    <style name="FileFlowAlertDialog" parent="@android:style/Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">#A78BFA</item>
+        <item name="android:windowBackground">@drawable/fileflow_dialog_background</item>
+        <item name="android:textColorPrimary">#F5F3FF</item>
+        <item name="android:textColorSecondary">#C4BFD9</item>
+        <item name="android:buttonBarPositiveButtonStyle">@style/FileFlowDialogButton</item>
+        <item name="android:buttonBarNegativeButtonStyle">@style/FileFlowDialogButton</item>
+        <item name="android:buttonBarNeutralButtonStyle">@style/FileFlowDialogButton</item>
+    </style>
+
+    <style name="FileFlowDialogButton" parent="@android:style/Widget.Material.Button.Borderless">
+        <item name="android:textColor">#A78BFA</item>
+        <item name="android:minHeight">48dp</item>
     </style>
 </resources>
