@@ -799,6 +799,35 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Removed from FileFlow", Toast.LENGTH_SHORT).show()
     }
 
+    private fun decodeImageForPdf(uri: Uri): android.graphics.Bitmap {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, bounds)
+        } ?: throw IllegalStateException("Could not open image")
+
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalArgumentException("The selected image is invalid.")
+        }
+
+        var sampleSize = 1
+        while (
+            bounds.outWidth / sampleSize > 3000 ||
+            bounds.outHeight / sampleSize > 4000 ||
+            (bounds.outWidth.toLong() / sampleSize) *
+                (bounds.outHeight.toLong() / sampleSize) > 12_000_000L
+        ) {
+            sampleSize *= 2
+        }
+
+        val options = BitmapFactory.Options().apply {
+            inSampleSize = sampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+        }
+        return contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IllegalStateException("Could not decode the selected image.")
+    }
+
     private fun convertDocumentToPdf(item: DocumentItem) {
         val extension = item.name.substringAfterLast('.', "").lowercase(Locale.getDefault())
         if (extension !in listOf("txt", "csv", "png", "jpg", "jpeg", "webp")) {
@@ -810,12 +839,13 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
-            val output = File(cacheDir, "FileFlow-${item.name.substringBeforeLast('.')}.pdf")
+            val safeBaseName = item.name.substringBeforeLast('.')
+                .replace(Regex("[^A-Za-z0-9._-]"), "_")
+                .ifBlank { "document" }
+            val output = File(cacheDir, "FileFlow-$safeBaseName.pdf")
             val pdf = PdfDocument()
             if (extension in listOf("png", "jpg", "jpeg", "webp")) {
-                val bitmap = contentResolver.openInputStream(Uri.parse(item.uri))?.use {
-                    BitmapFactory.decodeStream(it)
-                } ?: throw Exception("Could not read image")
+                val bitmap = decodeImageForPdf(Uri.parse(item.uri))
                 val pageWidth = 595
                 val pageHeight = 842
                 val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
