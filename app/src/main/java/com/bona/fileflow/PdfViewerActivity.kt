@@ -837,17 +837,37 @@ class PdfViewerActivity : Activity() {
                     ?: resources.displayMetrics.widthPixels).coerceIn(500, 1800))
                 mainHandler.post {
                     renderingPages.remove(index)
-                    if (!destroyed && continuousMode && image.parent != null && bitmap != null) {
+                    val isCurrentPageView = continuousPageViews.getOrNull(index) === image
+                    if (!destroyed && continuousMode && isCurrentPageView && bitmap != null) {
                         image.displayBitmap(bitmap)
                         image.setSepia(sepiaEnabled)
                         image.setFitWidth(fitWidthEnabled)
-                        (readerContainer as? ScrollView)?.let { renderVisibleContinuousPages(it) }
+                        image.invalidate()
                     } else {
                         bitmap?.recycle()
+                        if (!destroyed && continuousMode && isCurrentPageView && bitmap == null) {
+                            image.setBackgroundColor(Color.rgb(255, 244, 235))
+                            Toast.makeText(
+                                this,
+                                "Page " + (index + 1) + " rendered empty. Check whether this PDF is damaged or image-only.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
                 }
-            } catch (_: Exception) {
-                mainHandler.post { renderingPages.remove(index) }
+            } catch (e: Exception) {
+                mainHandler.post {
+                    renderingPages.remove(index)
+                    val isCurrentPageView = continuousPageViews.getOrNull(index) === image
+                    if (!destroyed && continuousMode && isCurrentPageView) {
+                        image.setBackgroundColor(Color.rgb(255, 230, 230))
+                        Toast.makeText(
+                            this,
+                            "Continuous page " + (index + 1) + " failed: " + (e.message ?: e.javaClass.simpleName),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             }
         }
     }
