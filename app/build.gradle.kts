@@ -11,8 +11,9 @@ android {
         applicationId = "com.bona.fileflow"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "1.1"
+        // Give every CI build a higher version so Android can install it as an update.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
+        versionName = "1.1.${System.getenv("GITHUB_RUN_NUMBER") ?: "local"}"
     }
 
     compileOptions {
