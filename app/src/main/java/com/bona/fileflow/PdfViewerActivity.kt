@@ -58,7 +58,6 @@ class PdfViewerActivity : Activity() {
     private lateinit var sepiaButton: TextView
     private lateinit var fitButton: TextView
     private lateinit var rotateButton: TextView
-    private lateinit var scrollButton: TextView
     private lateinit var spreadButton: TextView
     private lateinit var toolsButton: TextView
     private var currentUri: Uri? = null
@@ -69,16 +68,13 @@ class PdfViewerActivity : Activity() {
     private lateinit var rootLayout: LinearLayout
     private lateinit var imageContainer: LinearLayout
     private var readerContainer: View? = null
-    private var continuousMode = false
+    private var continuousMode = true
     private var twoPageMode = false
     private val continuousPageViews = mutableListOf<ZoomableImageView>()
-    private val continuousPageBaseSizes = mutableMapOf<ZoomableImageView, Pair<Int, Int>>()
-    private val continuousRows = mutableListOf<Triple<LinearLayout, Int, Int>>()
     private val renderingPages = mutableSetOf<Int>()
     private var sepiaEnabled = false
     private var fitWidthEnabled = false
     private var autoRotateEnabled = true
-    private var continuousZoomFactor = 1f
 
     private val backgroundColor = Color.rgb(13, 13, 27)
     private val panelColor = Color.rgb(25, 25, 43)
@@ -204,7 +200,6 @@ class PdfViewerActivity : Activity() {
         sepiaButton = createControlButton("Sepia")
         fitButton = createControlButton("Fit width")
         rotateButton = createControlButton("Auto rotate")
-        scrollButton = createControlButton("Continuous")
         spreadButton = createControlButton("Two pages")
         toolsButton = createControlButton("Tools")
 
@@ -238,26 +233,14 @@ class PdfViewerActivity : Activity() {
             rotateButton.isSelected = autoRotateEnabled
         }
 
-        scrollButton.setOnClickListener {
-            continuousMode = !continuousMode
-            if (!continuousMode) twoPageMode = false
-            scrollButton.text = if (continuousMode) "Continuous: On" else "Continuous"
-            scrollButton.isSelected = continuousMode
-            spreadButton.isEnabled = continuousMode
-            spreadButton.alpha = if (continuousMode) 1f else 0.55f
-            spreadButton.isSelected = twoPageMode
-            switchReaderContainer()
-        }
-
         spreadButton.setOnClickListener {
-            if (!continuousMode) return@setOnClickListener
             twoPageMode = !twoPageMode
             spreadButton.text = if (twoPageMode) "Two pages: On" else "Two pages"
             spreadButton.isSelected = twoPageMode
             switchReaderContainer()
         }
 
-        listOf(sepiaButton, fitButton, rotateButton, scrollButton, spreadButton, toolsButton)
+        listOf(sepiaButton, fitButton, rotateButton, spreadButton, toolsButton)
             .forEachIndexed { index, button ->
                 controlsRow.addView(button, LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)
@@ -266,8 +249,8 @@ class PdfViewerActivity : Activity() {
                 })
             }
 
-        spreadButton.isEnabled = false
-        spreadButton.alpha = 0.55f
+        spreadButton.isEnabled = true
+        spreadButton.alpha = 1f
         toolsButton.setOnClickListener { showToolsMenu(toolsButton) }
 
         val controlsScroll = android.widget.HorizontalScrollView(this).apply {
@@ -716,9 +699,6 @@ class PdfViewerActivity : Activity() {
     private fun switchReaderContainer() {
         readerContainer?.let { rootLayout.removeView(it) }
         continuousPageViews.clear()
-        continuousPageBaseSizes.clear()
-        continuousRows.clear()
-        continuousZoomFactor = 1f
         renderingPages.clear()
 
         val next: View = if (continuousMode) buildContinuousReader() else imageContainer
@@ -772,9 +752,6 @@ class PdfViewerActivity : Activity() {
                 val pageIndex = index + it
                 val image = ZoomableImageView(this, { direction ->
                     if (!continuousMode) changePage(direction)
-                }, { factor ->
-                    continuousZoomFactor = (continuousZoomFactor * factor).coerceIn(1f, 5f)
-                    applyContinuousDocumentZoom(pages)
                 }).apply {
                     setSwipeNavigationEnabled(false)
                     setBackgroundColor(Color.WHITE)
@@ -786,24 +763,19 @@ class PdfViewerActivity : Activity() {
                     dp(20) - if (count == 2) dp(12) else 0
                 val pageWidth = if (count == 2) availableWidth / 2 else availableWidth
                 val pageHeight = (pageWidth * ratios[pageIndex]).toInt().coerceAtLeast(dp(180))
-                continuousPageBaseSizes[image] = pageWidth to pageHeight
                 row.addView(image, LinearLayout.LayoutParams(
-                    pageWidth, pageHeight
+                    0, pageHeight, 1f
                 ).apply {
                     if (count == 2 && it == 0) marginEnd = dp(3)
                     if (count == 2 && it == 1) marginStart = dp(3)
                 })
             }
-            val rowHeight = (0 until row.childCount).maxOfOrNull { row.getChildAt(it).layoutParams.height } ?: dp(180)
-            continuousRows.add(Triple(row, resources.displayMetrics.widthPixels - dp(20), rowHeight))
             pages.addView(row, LinearLayout.LayoutParams(
-                resources.displayMetrics.widthPixels - dp(20), rowHeight
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = dp(8) })
             index += count
         }
-        scroll.addView(horizontal, ViewGroup.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        scroll.addView(pages)
         scroll.setOnScrollChangeListener { _, _, _, _, _ -> renderVisibleContinuousPages(scroll) }
         scroll.post { renderVisibleContinuousPages(scroll) }
         pages.post { renderVisibleContinuousPages(scroll) }
@@ -818,39 +790,12 @@ class PdfViewerActivity : Activity() {
         return scroll
     }
 
-    private fun applyContinuousDocumentZoom(pages: LinearLayout) {
-        val factor = continuousZoomFactor.coerceIn(1f, 5f)
-        continuousPageBaseSizes.forEach { (image, size) ->
-            val params = image.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
-            params.width = (size.first * factor).toInt().coerceAtLeast(1)
-            params.height = (size.second * factor).toInt().coerceAtLeast(1)
-            params.weight = 0f
-            val margin = dp((3f * factor).toInt())
-            params.marginStart = if (params.marginStart > 0) margin else 0
-            params.marginEnd = if (params.marginEnd > 0) margin else 0
-            image.layoutParams = params
-        }
-        continuousRows.forEach { (row, baseWidth, baseHeight) ->
-            val params = row.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
-            params.width = (baseWidth * factor).toInt()
-            params.height = (baseHeight * factor).toInt()
-            params.bottomMargin = dp((8f * factor).toInt())
-            row.layoutParams = params
-        }
-        val maxWidth = continuousRows.maxOfOrNull { (row, baseWidth, _) ->
-            (baseWidth * factor).toInt()
-        } ?: ViewGroup.LayoutParams.MATCH_PARENT
-        pages.layoutParams = pages.layoutParams.apply { width = maxWidth }
-        pages.requestLayout()
-    }
-
     private fun renderVisibleContinuousPages(scroll: ScrollView) {
         if (!continuousMode || destroyed) return
         val total = renderer?.pageCount ?: return
         if (continuousPageViews.isEmpty()) return
 
-        val horizontal = scroll.getChildAt(0) as? HorizontalScrollView ?: return
-        val content = horizontal.getChildAt(0) as? LinearLayout ?: return
+        val content = scroll.getChildAt(0) as? LinearLayout ?: return
         val viewportTop = scroll.scrollY
         val viewportBottom = viewportTop + scroll.height
         var firstVisible = -1
