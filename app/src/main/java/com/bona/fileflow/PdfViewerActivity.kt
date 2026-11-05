@@ -194,8 +194,8 @@ class PdfViewerActivity : Activity() {
 
         val controlsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(0, dp(2), 0, dp(5))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(3), dp(4), dp(3))
         }
 
         sepiaButton = createControlButton("Sepia")
@@ -209,12 +209,14 @@ class PdfViewerActivity : Activity() {
             sepiaEnabled = !sepiaEnabled
             pageImage.setSepia(sepiaEnabled)
             sepiaButton.text = if (sepiaEnabled) "Normal" else "Sepia"
+            sepiaButton.isSelected = sepiaEnabled
         }
 
         fitButton.setOnClickListener {
             fitWidthEnabled = !fitWidthEnabled
             pageImage.setFitWidth(fitWidthEnabled)
             fitButton.text = if (fitWidthEnabled) "Fit page" else "Fit width"
+            fitButton.isSelected = fitWidthEnabled
         }
 
         rotateButton.setOnClickListener {
@@ -225,14 +227,17 @@ class PdfViewerActivity : Activity() {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             }
             rotateButton.text = if (orientationLocked) "Unlock rotate" else "Auto rotate"
+            rotateButton.isSelected = orientationLocked
         }
 
         scrollButton.setOnClickListener {
             continuousMode = !continuousMode
             if (!continuousMode) twoPageMode = false
             scrollButton.text = if (continuousMode) "Paged" else "Continuous"
+            scrollButton.isSelected = continuousMode
             spreadButton.isEnabled = continuousMode
             spreadButton.alpha = if (continuousMode) 1f else 0.55f
+            spreadButton.isSelected = twoPageMode
             switchReaderContainer()
         }
 
@@ -240,34 +245,34 @@ class PdfViewerActivity : Activity() {
             if (!continuousMode) return@setOnClickListener
             twoPageMode = !twoPageMode
             spreadButton.text = if (twoPageMode) "One page" else "Two pages"
+            spreadButton.isSelected = twoPageMode
             switchReaderContainer()
         }
 
-        controlsRow.addView(sepiaButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginEnd = dp(4)
-        })
-        controlsRow.addView(fitButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(4)
-            marginEnd = dp(4)
-        })
-        controlsRow.addView(rotateButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(3)
-        })
-        controlsRow.addView(scrollButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(3)
-        })
-        controlsRow.addView(spreadButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(3)
-        })
+        listOf(sepiaButton, fitButton, rotateButton, scrollButton, spreadButton, toolsButton)
+            .forEachIndexed { index, button ->
+                controlsRow.addView(button, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)
+                ).apply {
+                    if (index > 0) marginStart = dp(6)
+                })
+            }
+
         spreadButton.isEnabled = false
         spreadButton.alpha = 0.55f
         toolsButton.setOnClickListener { showToolsMenu(toolsButton) }
-        controlsRow.addView(toolsButton, LinearLayout.LayoutParams(0, dp(32), 1f).apply {
-            marginStart = dp(3)
-        })
 
-        rootLayout.addView(controlsRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(39)
+        val controlsScroll = android.widget.HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(controlsRow, android.widget.HorizontalScrollView.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ))
+        }
+
+        rootLayout.addView(controlsScroll, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(54)
         ))
 
         readerContainer = imageContainer
@@ -851,12 +856,21 @@ class PdfViewerActivity : Activity() {
     private fun createControlButton(label: String): TextView {
         return TextView(this).apply {
             text = label
-            textSize = 11f
+            textSize = 12f
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
-            background = roundedBackground(panelColor, 8)
+            minWidth = dp(78)
+            minHeight = dp(48)
+            setPadding(dp(12), dp(6), dp(12), dp(6))
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(Color.argb(55, 255, 255, 255)),
+                roundedBackground(panelColor, 10),
+                null
+            )
             isClickable = true
             isFocusable = true
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            contentDescription = label
         }
     }
 
