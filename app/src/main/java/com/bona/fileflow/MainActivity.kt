@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
 
     private val prefs by lazy { getSharedPreferences("fileflow_library", MODE_PRIVATE) }
     private val documents = mutableListOf<DocumentItem>()
-    private val backgroundExecutor = Executors.newSingleThreadExecutor()
+    private val backgroundExecutor = Executors.newFixedThreadPool(2)
     private val mainHandler = Handler(Looper.getMainLooper())
     private lateinit var contentArea: LinearLayout
     private lateinit var searchField: EditText
@@ -425,53 +425,88 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun scanFolder(treeUri: Uri) {
-        var added = 0
-        val seen = mutableSetOf<String>()
-        fun visit(parentId: String, depth: Int) {
-            if (depth > 5 || seen.size >= 500) return
-            val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
-            val columns = arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE
-            )
-            contentResolver.query(childUri, columns, null, null, null)?.use { cursor ->
-                val idIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
-                val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
-                val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
-                while (cursor.moveToNext() && seen.size < 500) {
-                    val id = cursor.getString(idIndex)
-                    if (!seen.add(id)) continue
-                    val mime = cursor.getString(mimeIndex) ?: "application/octet-stream"
-                    if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                        visit(id, depth + 1)
-                    } else {
-                        val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
-                        if (documents.none { it.uri == fileUri.toString() }) {
-                            documents.add(DocumentItem(
-                                fileUri.toString(),
-                                cursor.getString(nameIndex) ?: "Untitled document",
-                                mime,
-                                System.currentTimeMillis(),
-                                false
-                            ))
-                            added++
+        val existingUris = documents.map { it.uri }.toHashSet()
+        Toast.makeText(this, "Scanning selected folder…", Toast.LENGTH_SHORT).show()
+
+        backgroundExecutor.execute {
+            val found = mutableListOf<DocumentItem>()
+            val seen = mutableSetOf<String>()
+            var scanError: String? = null
+
+            fun visit(parentId: String, depth: Int) {
+                if (depth > 5 || seen.size >= 500) return
+                val childUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentId)
+                val columns = arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE
+                )
+                val cursor = contentResolver.query(childUri, columns, null, null, null)
+                    ?: throw IllegalStateException("The selected folder could not be read.")
+                cursor.use {
+                    val idIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                    val nameIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                    val mimeIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                    if (idIndex < 0 || nameIndex < 0 || mimeIndex < 0) {
+                        throw IllegalStateException("The folder provider returned incomplete file details.")
+                    }
+                    while (it.moveToNext() && seen.size < 500) {
+                        val id = it.getString(idIndex) ?: continue
+                        if (!seen.add(id)) continue
+                        val mime = it.getString(mimeIndex) ?: "application/octet-stream"
+                        if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                            visit(id, depth + 1)
+                        } else {
+                            val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
+                            val value = fileUri.toString()
+                            if (value !in existingUris && found.none { item -> item.uri == value }) {
+                                found.add(DocumentItem(
+                                    value,
+                                    it.getString(nameIndex) ?: "Untitled document",
+                                    mime,
+                                    System.currentTimeMillis(),
+                                    false
+                                ))
+                            }
                         }
                     }
                 }
             }
-        }
-        try {
-            visit(DocumentsContract.getTreeDocumentId(treeUri), 0)
-            saveDocuments()
-            backfillDocumentHashes()
-            renderDocuments()
-            Toast.makeText(this, added.toString() + " new files added from the selected folder.", Toast.LENGTH_LONG).show()
-        } catch (e: Exception) {
-            Toast.makeText(this, "Folder scan failed: " + e.message, Toast.LENGTH_LONG).show()
+
+            try {
+                visit(DocumentsContract.getTreeDocumentId(treeUri), 0)
+            } catch (e: Exception) {
+                scanError = e.message ?: "Unknown folder access error"
+            }
+
+            mainHandler.post {
+                if (isFinishing || isDestroyed) return@post
+                var added = 0
+                found.forEach { item ->
+                    if (documents.none { existing -> existing.uri == item.uri }) {
+                        documents.add(item)
+                        added++
+                    }
+                }
+                saveDocuments()
+                backfillDocumentHashes()
+                renderDocuments()
+                if (scanError != null) {
+                    Toast.makeText(
+                        this,
+                        "Folder scan stopped: $scanError. Added $added files found before the error.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this,
+                        "$added new files added from the selected folder.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
         }
     }
-
 
     private fun showCreateFileDialog() {
         val formats = arrayOf("Word document  ·  .DOCX", "Excel spreadsheet  ·  .XLSX", "PDF document  ·  .PDF", "Text document  ·  .TXT", "CSV spreadsheet  ·  .CSV")
