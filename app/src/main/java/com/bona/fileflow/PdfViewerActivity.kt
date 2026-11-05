@@ -1190,8 +1190,14 @@ class PdfViewerActivity : Activity() {
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+            val image = drawable ?: return
+            if (image.intrinsicWidth <= 0 || image.intrinsicHeight <= 0) return
+
             val all = savedStrokes.toMutableList()
             activeStroke?.let { all.add(it) }
+            val saveCount = canvas.save()
+            canvas.concat(matrixValue)
+            val inverseBaseScale = 1f / baseScale.coerceAtLeast(0.0001f)
             all.forEach { stroke ->
                 if (stroke.points.size < 2) return@forEach
                 val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -1201,26 +1207,45 @@ class PdfViewerActivity : Activity() {
                     when (stroke.mode) {
                         "highlight" -> {
                             color = Color.argb(95, 255, 220, 40)
-                            strokeWidth = dpLocal(18f)
+                            strokeWidth = dpLocal(18f) * inverseBaseScale
                         }
                         "underline" -> {
                             color = Color.rgb(255, 90, 90)
-                            strokeWidth = dpLocal(2.5f)
+                            strokeWidth = dpLocal(2.5f) * inverseBaseScale
                         }
                         else -> {
                             color = Color.rgb(255, 70, 70)
-                            strokeWidth = dpLocal(3.5f)
+                            strokeWidth = dpLocal(3.5f) * inverseBaseScale
                         }
                     }
                 }
                 val path = Path()
                 stroke.points.forEachIndexed { index, point ->
-                    val x = point.x * width
-                    val y = point.y * height
+                    val x = point.x * image.intrinsicWidth
+                    val y = point.y * image.intrinsicHeight
                     if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
                 canvas.drawPath(path, paint)
             }
+            canvas.restoreToCount(saveCount)
+        }
+
+        private fun normalizedImagePoint(x: Float, y: Float): PointF {
+            val image = drawable
+            if (image == null || image.intrinsicWidth <= 0 || image.intrinsicHeight <= 0) {
+                return PointF(
+                    (x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
+                    (y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
+                )
+            }
+            val inverse = Matrix()
+            if (!matrixValue.invert(inverse)) return PointF(0f, 0f)
+            val mapped = floatArrayOf(x, y)
+            inverse.mapPoints(mapped)
+            return PointF(
+                (mapped[0] / image.intrinsicWidth).coerceIn(0f, 1f),
+                (mapped[1] / image.intrinsicHeight).coerceIn(0f, 1f)
+            )
         }
 
         private fun dpLocal(value: Float): Float = value * resources.displayMetrics.density
@@ -1319,27 +1344,18 @@ class PdfViewerActivity : Activity() {
                     MotionEvent.ACTION_DOWN -> {
                         activeStroke = SavedStroke(
                             annotationMode!!,
-                            mutableListOf(PointF(
-                                (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
-                                (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
-                            ))
+                            mutableListOf(normalizedImagePoint(event.x, event.y))
                         )
                         invalidate()
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        activeStroke?.points?.add(PointF(
-                            (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
-                            (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
-                        ))
+                        activeStroke?.points?.add(normalizedImagePoint(event.x, event.y))
                         invalidate()
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        activeStroke?.points?.add(PointF(
-                            (event.x / width.coerceAtLeast(1)).coerceIn(0f, 1f),
-                            (event.y / height.coerceAtLeast(1)).coerceIn(0f, 1f)
-                        ))
+                        activeStroke?.points?.add(normalizedImagePoint(event.x, event.y))
                         activeStroke?.let { savedStrokes.add(it) }
                         activeStroke = null
                         saveAnnotations()
