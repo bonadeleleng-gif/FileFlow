@@ -603,7 +603,9 @@ class MainActivity : ComponentActivity() {
                     }
                     pendingCreatedFile = file
                     val safeName = name.text.toString().trim().ifBlank { "Untitled" }
-                        .replace(Regex("[\\\\/:*?\\"<>|]"), "_")
+                        .replace("/", "_").replace("\\", "_").replace(":", "_")
+                        .replace("*", "_").replace("?", "_").replace("\"", "_")
+                        .replace("<", "_").replace(">", "_").replace("|", "_")
                         .ifBlank { "Untitled" }
                     val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                         addCategory(Intent.CATEGORY_OPENABLE)
