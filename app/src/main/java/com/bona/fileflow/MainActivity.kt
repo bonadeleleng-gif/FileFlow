@@ -663,28 +663,34 @@ class MainActivity : ComponentActivity() {
 
     private fun createPdfFile(file: File, text: String) {
         val pdf = PdfDocument()
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK; textSize = 12f }
-        var pageNo = 1
-        var page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
-        var y = 48f
-        text.lines().forEach { line ->
-            var rest = line.ifEmpty { " " }
-            while (rest.isNotEmpty()) {
-                if (y > 790f) {
-                    pdf.finishPage(page)
-                    pageNo++
-                    page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
-                    y = 48f
-                }
-                val count = paint.breakText(rest, true, 500f, null).coerceAtLeast(1)
-                page.canvas.drawText(rest.substring(0, count), 48f, y, paint)
-                rest = rest.substring(count)
-                y += 18f
+        try {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.BLACK
+                textSize = 12f
             }
+            var pageNo = 1
+            var page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
+            var y = 48f
+            text.lines().forEach { line ->
+                var rest = line.ifEmpty { " " }
+                while (rest.isNotEmpty()) {
+                    if (y > 790f) {
+                        pdf.finishPage(page)
+                        pageNo++
+                        page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNo).create())
+                        y = 48f
+                    }
+                    val count = paint.breakText(rest, true, 500f, null).coerceAtLeast(1)
+                    page.canvas.drawText(rest.substring(0, count), 48f, y, paint)
+                    rest = rest.substring(count)
+                    y += 18f
+                }
+            }
+            pdf.finishPage(page)
+            file.outputStream().use { pdf.writeTo(it) }
+        } finally {
+            pdf.close()
         }
-        pdf.finishPage(page)
-        file.outputStream().use { pdf.writeTo(it) }
-        pdf.close()
     }
 
     private fun chooseDocument() {
@@ -838,68 +844,93 @@ class MainActivity : ComponentActivity() {
             ).show()
             return
         }
+
+        var output: File? = null
         try {
             val safeBaseName = item.name.substringBeforeLast('.')
                 .replace(Regex("[^A-Za-z0-9._-]"), "_")
                 .ifBlank { "document" }
-            val output = File(cacheDir, "FileFlow-$safeBaseName.pdf")
+            val convertedFile = File(cacheDir, "FileFlow-$safeBaseName.pdf")
+            output = convertedFile
             val pdf = PdfDocument()
-            if (extension in listOf("png", "jpg", "jpeg", "webp")) {
-                val bitmap = decodeImageForPdf(Uri.parse(item.uri))
-                val pageWidth = 595
-                val pageHeight = 842
-                val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
-                val scale = minOf((pageWidth - 48f) / bitmap.width, (pageHeight - 48f) / bitmap.height)
-                val width = bitmap.width * scale
-                val height = bitmap.height * scale
-                val left = (pageWidth - width) / 2f
-                val top = (pageHeight - height) / 2f
-                page.canvas.drawBitmap(bitmap, null, android.graphics.RectF(left, top, left + width, top + height), null)
-                pdf.finishPage(page)
-                bitmap.recycle()
-            } else {
-                val text = contentResolver.openInputStream(Uri.parse(item.uri))?.bufferedReader()?.use { it.readText() }
-                    ?: throw Exception("Could not read text file")
-                val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                    color = Color.BLACK
-                    textSize = 10f
-                }
-                val pageWidth = 595
-                val pageHeight = 842
-                val margin = 42f
-                val maxWidth = pageWidth - margin * 2
-                val lineHeight = 14f
-                var pageNumber = 1
-                var page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
-                var y = margin
-                text.lines().forEach { sourceLine ->
-                    var remaining = sourceLine
-                    if (remaining.isEmpty()) remaining = " "
-                    while (remaining.isNotEmpty()) {
-                        if (y > pageHeight - margin) {
-                            pdf.finishPage(page)
-                            pageNumber++
-                            page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create())
-                            y = margin
-                        }
-                        val count = paint.breakText(remaining, true, maxWidth, null).coerceAtLeast(1)
-                        page.canvas.drawText(remaining.substring(0, count), margin, y, paint)
-                        remaining = remaining.substring(count)
-                        y += lineHeight
+            try {
+                if (extension in listOf("png", "jpg", "jpeg", "webp")) {
+                    val bitmap = decodeImageForPdf(Uri.parse(item.uri))
+                    try {
+                        val pageWidth = 595
+                        val pageHeight = 842
+                        val page = pdf.startPage(
+                            PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
+                        )
+                        val scale = minOf(
+                            (pageWidth - 48f) / bitmap.width,
+                            (pageHeight - 48f) / bitmap.height
+                        )
+                        val width = bitmap.width * scale
+                        val height = bitmap.height * scale
+                        val left = (pageWidth - width) / 2f
+                        val top = (pageHeight - height) / 2f
+                        page.canvas.drawBitmap(
+                            bitmap, null,
+                            android.graphics.RectF(left, top, left + width, top + height),
+                            null
+                        )
+                        pdf.finishPage(page)
+                    } finally {
+                        bitmap.recycle()
                     }
+                } else {
+                    val text = contentResolver.openInputStream(Uri.parse(item.uri))
+                        ?.bufferedReader()?.use { it.readText() }
+                        ?: throw Exception("Could not read text file")
+                    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                        color = Color.BLACK
+                        textSize = 10f
+                    }
+                    val pageWidth = 595
+                    val pageHeight = 842
+                    val margin = 42f
+                    val maxWidth = pageWidth - margin * 2
+                    val lineHeight = 14f
+                    var pageNumber = 1
+                    var page = pdf.startPage(
+                        PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                    )
+                    var y = margin
+                    text.lines().forEach { sourceLine ->
+                        var remaining = sourceLine.ifEmpty { " " }
+                        while (remaining.isNotEmpty()) {
+                            if (y > pageHeight - margin) {
+                                pdf.finishPage(page)
+                                pageNumber++
+                                page = pdf.startPage(
+                                    PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                                )
+                                y = margin
+                            }
+                            val count = paint.breakText(remaining, true, maxWidth, null).coerceAtLeast(1)
+                            page.canvas.drawText(remaining.substring(0, count), margin, y, paint)
+                            remaining = remaining.substring(count)
+                            y += lineHeight
+                        }
+                    }
+                    pdf.finishPage(page)
                 }
-                pdf.finishPage(page)
+                convertedFile.outputStream().use { pdf.writeTo(it) }
+            } finally {
+                pdf.close()
             }
-            output.outputStream().use { pdf.writeTo(it) }
-            pdf.close()
-            pendingConvertedFile = output
+
+            pendingConvertedFile = convertedFile
             val saveIntent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                 addCategory(Intent.CATEGORY_OPENABLE)
                 type = "application/pdf"
-                putExtra(Intent.EXTRA_TITLE, "${item.name.substringBeforeLast('.')}.pdf")
+                putExtra(Intent.EXTRA_TITLE, "$safeBaseName.pdf")
             }
             startActivityForResult(saveIntent, convertPdfRequestCode)
         } catch (e: Exception) {
+            output?.delete()
+            if (pendingConvertedFile === output) pendingConvertedFile = null
             Toast.makeText(this, "PDF conversion failed: ${e.message}", Toast.LENGTH_LONG).show()
         }
     }
