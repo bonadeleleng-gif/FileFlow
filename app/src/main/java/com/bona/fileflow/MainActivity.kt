@@ -100,20 +100,14 @@ class MainActivity : ComponentActivity() {
             if (target != null && source != null) {
                 try {
                     val resultFlags = data?.flags ?: 0
-                    if ((resultFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0) {
+                    val persistRead = (resultFlags and Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0
+                    val persistWrite = (resultFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+                    if (persistRead || persistWrite) {
+                        val flagsToPersist = (if (persistRead) Intent.FLAG_GRANT_READ_URI_PERMISSION else 0) or
+                            (if (persistWrite) Intent.FLAG_GRANT_WRITE_URI_PERMISSION else 0)
                         try {
-                            contentResolver.takePersistableUriPermission(
-                                target, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                            )
-                        } catch (_: Exception) {
-                            // Some document providers grant temporary access only.
-                        }
-                    }
-                    if ((resultFlags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0) {
-                        try {
-                            contentResolver.takePersistableUriPermission(
-                                target, Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                            )
+                            @Suppress("WrongConstant")
+                            contentResolver.takePersistableUriPermission(target, flagsToPersist)
                         } catch (_: Exception) {
                             // Some document providers grant temporary access only.
                         }
