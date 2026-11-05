@@ -94,37 +94,37 @@ class MainActivity : ComponentActivity() {
             } catch (e: Exception) {
                 Toast.makeText(this, "Could not access folder: " + e.message, Toast.LENGTH_LONG).show()
             }
-        } else if (requestCode == createFileRequestCode && resultCode == RESULT_OK) {
-            val target = data?.data
+        } else if (requestCode == createFileRequestCode) {
+            val target = if (resultCode == RESULT_OK) data?.data else null
             val source = pendingCreatedFile
             if (target != null && source != null) {
                 try {
-                    contentResolver.openOutputStream(target)?.use { out -> source.inputStream().use { it.copyTo(out) } }
+                    val output = contentResolver.openOutputStream(target)
+                        ?: throw IllegalStateException("The selected destination could not be opened.")
+                    output.use { out -> source.inputStream().use { it.copyTo(out) } }
                     addDocument(target)
                     Toast.makeText(this, "File saved.", Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "Could not save: " + e.message, Toast.LENGTH_LONG).show()
-                } finally { source.delete(); pendingCreatedFile = null }
+                }
             }
-        } else if (requestCode == createFileRequestCode) {
-            pendingCreatedFile?.delete()
+            source?.delete()
             pendingCreatedFile = null
-        } else if (requestCode == convertPdfRequestCode && resultCode == RESULT_OK) {
-            val destination = data?.data
+        } else if (requestCode == convertPdfRequestCode) {
+            val destination = if (resultCode == RESULT_OK) data?.data else null
             val source = pendingConvertedFile
             if (destination != null && source != null) {
                 try {
-                    contentResolver.openOutputStream(destination)?.use { output ->
-                        source.inputStream().use { input -> input.copyTo(output) }
-                    }
+                    val output = contentResolver.openOutputStream(destination)
+                        ?: throw IllegalStateException("The selected destination could not be opened.")
+                    output.use { out -> source.inputStream().use { it.copyTo(out) } }
                     Toast.makeText(this, "PDF created successfully.", Toast.LENGTH_LONG).show()
                 } catch (e: Exception) {
                     Toast.makeText(this, "PDF conversion failed: ${e.message}", Toast.LENGTH_LONG).show()
-                } finally {
-                    source.delete()
-                    pendingConvertedFile = null
                 }
             }
+            source?.delete()
+            pendingConvertedFile = null
         }
     }
 
