@@ -238,6 +238,7 @@ class MainActivity : ComponentActivity() {
                             createHomeScreen()
                         }
                     } else {
+                        if (tab != "Private") privateUnlocked = false
                         selectedTab = tab
                         createHomeScreen()
                     }
