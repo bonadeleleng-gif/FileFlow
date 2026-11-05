@@ -780,27 +780,32 @@ class PdfViewerActivity : Activity() {
         val content = scroll.getChildAt(0) as? LinearLayout ?: return
         val viewportTop = scroll.scrollY
         val viewportBottom = viewportTop + scroll.height
-        var firstVisible = -1
-        var lastVisible = -1
-        var pageIndex = 0
-
-        // Only inspect rows intersecting the viewport. Each row may contain one
-        // or two pages depending on the spread setting.
-        for (rowIndex in 0 until content.childCount) {
-            val row = content.getChildAt(rowIndex)
-            if (row.bottom >= viewportTop && row.top <= viewportBottom) {
-                if (firstVisible < 0) firstVisible = pageIndex
-                lastVisible = pageIndex + ((row as? ViewGroup)?.childCount ?: 0) - 1
+        // Find the first visible row with binary search. A linear scan from
+        // page one on every scroll becomes increasingly expensive in large PDFs.
+        var low = 0
+        var high = content.childCount - 1
+        var firstVisibleRow = content.childCount
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val row = content.getChildAt(middle)
+            if (row.bottom < viewportTop) {
+                low = middle + 1
+            } else {
+                firstVisibleRow = middle
+                high = middle - 1
             }
-            pageIndex += ((row as? ViewGroup)?.childCount ?: 0)
-            if (row.top > viewportBottom) break
         }
+        if (firstVisibleRow >= content.childCount) return
 
-        if (firstVisible < 0) {
-            firstVisible = 0
-            lastVisible = 0
+        var lastVisibleRow = firstVisibleRow
+        for (rowIndex in firstVisibleRow until content.childCount) {
+            val row = content.getChildAt(rowIndex)
+            if (row.top > viewportBottom) break
+            if (row.bottom >= viewportTop) lastVisibleRow = rowIndex
         }
-        currentPage = firstVisible.coerceIn(0, total - 1)
+        val firstVisible = firstVisibleRow.coerceIn(0, total - 1)
+        val lastVisible = lastVisibleRow.coerceIn(firstVisible, total - 1)
+        currentPage = firstVisible
         updateCounter()
 
         // Keep only visible pages and a small nearby buffer in memory. Without
@@ -808,10 +813,16 @@ class PdfViewerActivity : Activity() {
         // every rendered bitmap and eventually risk an out-of-memory crash.
         val preloadStart = (firstVisible - 2).coerceAtLeast(0)
         val preloadEnd = (lastVisible + 2).coerceAtMost(total - 1)
+        val previousStart = continuousPreloadStart
+        val previousEnd = continuousPreloadEnd
         continuousPreloadStart = preloadStart
         continuousPreloadEnd = preloadEnd
-        continuousPageViews.forEachIndexed { index, image ->
-            if (index !in preloadStart..preloadEnd) releasePageBitmap(image)
+        if (previousEnd >= previousStart) {
+            for (index in previousStart..previousEnd) {
+                if (index !in preloadStart..preloadEnd) {
+                    continuousPageViews.getOrNull(index)?.let { releasePageBitmap(it) }
+                }
+            }
         }
         for (index in preloadStart..preloadEnd) {
             val image = continuousPageViews.getOrNull(index) ?: continue
