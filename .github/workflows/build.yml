@@ -32,6 +32,15 @@ jobs:
         with:
           gradle-version: 8.11.1
 
+      - name: Prepare Android debug signing directory
+        run: mkdir -p ~/.android
+
+      - name: Restore stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: fileflow-debug-signing-key-v1
+
       - name: Build APK
         run: gradle assembleDebug
 
