@@ -177,10 +177,11 @@ class MainActivity : ComponentActivity() {
         }
 
         val openButton = Button(this).apply {
-            text = "＋   Open a document"
-            textSize = 15f
+            text = "＋  Open document"
+            textSize = 13f
             isAllCaps = false
             setTextColor(Color.WHITE)
+            setPadding(dp(2), 0, dp(2), 0)
             setBackgroundColor(purple)
             setOnClickListener { chooseDocument() }
         }
@@ -292,9 +293,9 @@ class MainActivity : ComponentActivity() {
         }
         val actionRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(5) })
-            addView(createButton, LinearLayout.LayoutParams(dp(88), dp(48)).apply { marginEnd = dp(5) })
-            addView(folderButton, LinearLayout.LayoutParams(dp(118), dp(48)))
+            addView(openButton, LinearLayout.LayoutParams(0, dp(48), 1.25f).apply { marginEnd = dp(5) })
+            addView(createButton, LinearLayout.LayoutParams(0, dp(48), 0.9f).apply { marginEnd = dp(5) })
+            addView(folderButton, LinearLayout.LayoutParams(0, dp(48), 1.05f))
         }
         root.addView(actionRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(52)).apply { bottomMargin = dp(14) })
         root.addView(searchField, LinearLayout.LayoutParams(
@@ -463,41 +464,107 @@ class MainActivity : ComponentActivity() {
 
 
     private fun showCreateFileDialog() {
-        val input = EditText(this).apply {
-            hint = "Enter text for the new file"
-            minLines = 6
-            gravity = Gravity.TOP
+        val formats = arrayOf("Word document  ·  .DOCX", "Excel spreadsheet  ·  .XLSX", "PDF document  ·  .PDF", "Text document  ·  .TXT", "CSV spreadsheet  ·  .CSV")
+        val ext = arrayOf("docx", "xlsx", "pdf", "txt", "csv")
+        val mime = arrayOf(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/pdf", "text/plain", "text/csv"
+        )
+        val chooser = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
         }
-        val name = EditText(this).apply { setText("Untitled"); hint = "File name" }
-        val choices = arrayOf("Word document (.docx)", "Excel spreadsheet (.xlsx)", "PDF document (.pdf)", "Text file (.txt)", "CSV spreadsheet (.csv)")
-        AlertDialog.Builder(this).setTitle("Create a file").setItems(choices) { _, which ->
-            val ext = arrayOf("docx", "xlsx", "pdf", "txt", "csv")[which]
-            val form = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(dp(20), dp(8), dp(20), 0)
-                addView(name)
-                addView(input, LinearLayout.LayoutParams(-1, dp(150)))
-            }
-            AlertDialog.Builder(this).setTitle("New " + ext.uppercase(Locale.getDefault())).setView(form)
-                .setPositiveButton("Save") { _, _ ->
-                    try {
-                        val file = File(cacheDir, "created-" + System.currentTimeMillis() + "." + ext)
-                        when (ext) { "docx" -> makeDocx(file, input.text.toString()); "xlsx" -> makeXlsx(file, input.text.toString()); "pdf" -> createPdfFile(file, input.text.toString()); else -> file.writeText(input.text.toString()) }
-                        pendingCreatedFile = file
-                        val mime = when (ext) { "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"; "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"; "pdf" -> "application/pdf"; "csv" -> "text/csv"; else -> "text/plain" }
-                        val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = mime
-                            putExtra(Intent.EXTRA_TITLE, name.text.toString().trim().ifBlank { "Untitled" } + "." + ext)
-                        }
-                        startActivityForResult(save, createFileRequestCode)
-                    } catch (e: Exception) {
-                        Toast.makeText(this, "Could not create file: " + e.message, Toast.LENGTH_LONG).show()
-                    }
-                }.setNegativeButton("Cancel", null).show()
-        }.setNegativeButton("Cancel", null).show()
+        chooser.addView(TextView(this).apply {
+            text = "Choose a format to start a new file."
+            textSize = 14f
+            setTextColor(mutedText())
+            setPadding(0, 0, 0, dp(12))
+        })
+        formats.forEachIndexed { index, label ->
+            chooser.addView(TextView(this).apply {
+                text = label
+                textSize = 15f
+                setTextColor(mainText())
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(14), dp(15), dp(12), dp(15))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(panel())
+                    cornerRadius = dp(12).toFloat()
+                }
+                isClickable = true
+                isFocusable = true
+                setOnClickListener { createNewFile(index, ext[index], mime[index]) }
+            }, LinearLayout.LayoutParams(-1, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                bottomMargin = dp(8)
+            })
+        }
+        AlertDialog.Builder(this).setTitle("Create new").setView(chooser)
+            .setNegativeButton("Cancel", null).show()
     }
 
+    private fun createNewFile(index: Int, ext: String, mime: String) {
+        val formatName = arrayOf("Word document", "Excel spreadsheet", "PDF document", "Text document", "CSV spreadsheet")[index]
+        val form = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(4))
+        }
+        val name = EditText(this).apply {
+            setText("Untitled")
+            hint = "File name"
+            textSize = 16f
+            setSingleLine(true)
+        }
+        val editor = EditText(this).apply {
+            hint = if (index == 1 || index == 4) "Enter rows; use commas between columns…" else "Start writing…"
+            textSize = 15f
+            gravity = Gravity.TOP
+            minLines = 8
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(panel())
+                cornerRadius = dp(12).toFloat()
+                setStroke(dp(1), if (lightMode) Color.rgb(220, 218, 230) else Color.rgb(54, 54, 76))
+            }
+        }
+        form.addView(name)
+        form.addView(TextView(this).apply {
+            text = if (index == 1 || index == 4) "Each line becomes a row; commas separate cells." else "Your file will be saved where you choose."
+            textSize = 12f
+            setTextColor(mutedText())
+            setPadding(0, dp(8), 0, dp(10))
+        })
+        form.addView(editor, LinearLayout.LayoutParams(-1, dp(220)))
+        val dialog = AlertDialog.Builder(this).setTitle("New $formatName")
+            .setView(form).setPositiveButton("Continue", null)
+            .setNegativeButton("Cancel", null).create()
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                try {
+                    val file = File(cacheDir, "created-" + System.currentTimeMillis() + "." + ext)
+                    val content = editor.text.toString()
+                    when (ext) {
+                        "docx" -> makeDocx(file, content)
+                        "xlsx" -> makeXlsx(file, content)
+                        "pdf" -> createPdfFile(file, content)
+                        else -> file.writeText(content)
+                    }
+                    pendingCreatedFile = file
+                    val safeName = name.text.toString().trim().ifBlank { "Untitled" }
+                    val save = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                        addCategory(Intent.CATEGORY_OPENABLE)
+                        type = mime
+                        putExtra(Intent.EXTRA_TITLE, "$safeName.$ext")
+                    }
+                    startActivityForResult(save, createFileRequestCode)
+                    dialog.dismiss()
+                } catch (e: Exception) {
+                    Toast.makeText(this, "Could not create file: " + e.message, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+        dialog.show()
+    }
 
     private fun writeOfficeZip(file: File, parts: Map<String, String>) {
         java.util.zip.ZipOutputStream(file.outputStream()).use { zip ->
