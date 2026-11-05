@@ -350,7 +350,7 @@ class MainActivity : ComponentActivity() {
                 "Recent" -> !it.isDeleted && !it.isPrivate &&
                     it.openedAt >= System.currentTimeMillis() - 30L * 24 * 60 * 60 * 1000
                 // Private documents, including their deleted items, stay behind the PIN.
-                "Private" -> it.isPrivate
+                "Private" -> it.isPrivate && privateUnlocked
                 "Trash" -> it.isDeleted && !it.isPrivate
                 "Duplicates" -> !it.isDeleted && !it.isPrivate && it.contentHash in duplicateHashes
                 else -> !it.isDeleted && !it.isPrivate
