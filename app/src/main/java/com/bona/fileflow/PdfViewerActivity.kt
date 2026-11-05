@@ -812,7 +812,7 @@ class PdfViewerActivity : Activity() {
                 if (firstVisible < 0) firstVisible = pageIndex
                 lastVisible = pageIndex + ((row as? ViewGroup)?.childCount ?: 0) - 1
             }
-            pageIndex += (row as? ViewGroup)?.childCount.orZero()
+            pageIndex += ((row as? ViewGroup)?.childCount ?: 0)
             if (row.top > viewportBottom) break
         }
 
