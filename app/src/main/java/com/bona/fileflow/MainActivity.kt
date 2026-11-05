@@ -511,7 +511,7 @@ class MainActivity : ComponentActivity() {
 
     private fun xmlEscape(value: String): String = value
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        .replace("\"", "&quot;").replace(String(charArrayOf(39)), "&apos;")
+        .replace("\"", "&quot;").replace("\u0027", "&apos;")
 
     private fun makeDocx(file: File, text: String) {
         val paragraphs = text.lines().joinToString("") { line ->
