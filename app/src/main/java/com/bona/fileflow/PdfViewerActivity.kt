@@ -793,11 +793,19 @@ class PdfViewerActivity : Activity() {
         }
         val total = renderer?.pageCount ?: 0
         val ratios = (0 until total).map { index ->
-            synchronized(rendererLock) {
-                val pdf = renderer ?: return@synchronized 1f
-                val page = pdf.openPage(index)
-                try { page.height.toFloat() / page.width.toFloat() }
-                finally { page.close() }
+            try {
+                synchronized(rendererLock) {
+                    val pdf = renderer ?: return@synchronized 1f
+                    val page = pdf.openPage(index)
+                    try {
+                        page.height.toFloat() / page.width.toFloat()
+                    } finally {
+                        page.close()
+                    }
+                }
+            } catch (_: Exception) {
+                // Keep the reader usable if a single damaged page cannot be inspected.
+                1f
             }
         }
 
