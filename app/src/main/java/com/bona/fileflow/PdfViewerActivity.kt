@@ -75,7 +75,7 @@ class PdfViewerActivity : Activity() {
     private val renderingPages = mutableSetOf<Int>()
     private var sepiaEnabled = false
     private var fitWidthEnabled = false
-    private var orientationLocked = false
+    private var autoRotateEnabled = true
 
     private val backgroundColor = Color.rgb(13, 13, 27)
     private val panelColor = Color.rgb(25, 25, 43)
@@ -221,15 +221,18 @@ class PdfViewerActivity : Activity() {
             fitButton.isSelected = fitWidthEnabled
         }
 
+        rotateButton.text = "Auto rotate: On"
+        rotateButton.isSelected = true
+        requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         rotateButton.setOnClickListener {
-            orientationLocked = !orientationLocked
-            requestedOrientation = if (orientationLocked) {
-                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            } else {
+            autoRotateEnabled = !autoRotateEnabled
+            requestedOrientation = if (autoRotateEnabled) {
                 android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            } else {
+                android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             }
-            rotateButton.text = if (orientationLocked) "Portrait lock: On" else "Auto rotate"
-            rotateButton.isSelected = orientationLocked
+            rotateButton.text = if (autoRotateEnabled) "Auto rotate: On" else "Portrait lock: On"
+            rotateButton.isSelected = autoRotateEnabled
         }
 
         scrollButton.setOnClickListener {
