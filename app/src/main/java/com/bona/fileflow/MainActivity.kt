@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val logo = ImageView(this).apply {
-            setImageResource(com.bona.fileflow.R.drawable.fileflow_logo)
+            setImageResource(com.bona.fileflow.R.drawable.fileflow_icon)
             scaleType = ImageView.ScaleType.FIT_CENTER
         }
         header.addView(logo, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(10) })
