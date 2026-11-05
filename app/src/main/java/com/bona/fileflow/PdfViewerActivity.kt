@@ -934,8 +934,20 @@ class PdfViewerActivity : Activity() {
             if (pageIndex !in 0 until pdf.pageCount) return@synchronized null
             val page = pdf.openPage(pageIndex)
             try {
-                val width = targetWidth.coerceIn(500, 1800)
-                val height = (width.toFloat() * page.height / page.width).toInt().coerceAtLeast(1)
+                val sourceWidth = page.width.toFloat()
+                val sourceHeight = page.height.toFloat()
+                val desiredWidth = targetWidth.coerceIn(500, 1800).toFloat()
+                val maxDimensionScale = 5000f / maxOf(sourceWidth, sourceHeight)
+                val maxPixelScale = kotlin.math.sqrt(
+                    (12_000_000f / (sourceWidth * sourceHeight)).toDouble()
+                ).toFloat()
+                val scale = minOf(
+                    desiredWidth / sourceWidth,
+                    maxDimensionScale,
+                    maxPixelScale
+                )
+                val width = (sourceWidth * scale).toInt().coerceAtLeast(1)
+                val height = (sourceHeight * scale).toInt().coerceAtLeast(1)
                 val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
                 Canvas(result).drawColor(Color.WHITE)
                 page.render(result, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
