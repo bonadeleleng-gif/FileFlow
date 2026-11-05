@@ -443,6 +443,7 @@ class MainActivity : ComponentActivity() {
                 )
                 val cursor = contentResolver.query(childUri, columns, null, null, null)
                     ?: throw IllegalStateException("The selected folder could not be read.")
+                val subdirectories = mutableListOf<String>()
                 cursor.use {
                     val idIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
                     val nameIndex = it.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
@@ -455,7 +456,7 @@ class MainActivity : ComponentActivity() {
                         if (!seen.add(id)) continue
                         val mime = it.getString(mimeIndex) ?: "application/octet-stream"
                         if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
-                            visit(id, depth + 1)
+                            subdirectories.add(id)
                         } else {
                             val fileUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, id)
                             val value = fileUri.toString()
@@ -470,6 +471,9 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                }
+                subdirectories.forEach { childId ->
+                    if (seen.size < 500) visit(childId, depth + 1)
                 }
             }
 
