@@ -58,7 +58,6 @@ class PdfViewerActivity : Activity() {
     private lateinit var sepiaButton: TextView
     private lateinit var fitButton: TextView
     private lateinit var rotateButton: TextView
-    private lateinit var spreadButton: TextView
     private lateinit var toolsButton: TextView
     private var currentUri: Uri? = null
     private var pendingExportFile: File? = null
@@ -69,7 +68,6 @@ class PdfViewerActivity : Activity() {
     private lateinit var imageContainer: LinearLayout
     private var readerContainer: View? = null
     private var continuousMode = true
-    private var twoPageMode = false
     private val continuousPageViews = mutableListOf<ZoomableImageView>()
     private val renderingPages = mutableSetOf<Int>()
     private var sepiaEnabled = false
@@ -123,7 +121,7 @@ class PdfViewerActivity : Activity() {
         rootLayout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(backgroundColor)
-            setPadding(dp(6), dp(3), dp(6), dp(2))
+            setPadding(dp(6), dp(1), dp(6), dp(2))
         }
 
         val header = LinearLayout(this).apply {
@@ -184,23 +182,22 @@ class PdfViewerActivity : Activity() {
         )
 
         rootLayout.addView(header, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(28)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(24)
         ))
 
         rootLayout.addView(counterRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(29)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(24)
         ))
 
         val controlsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), dp(3), dp(4), dp(3))
+            setPadding(dp(4), dp(1), dp(4), dp(1))
         }
 
         sepiaButton = createControlButton("Sepia")
         fitButton = createControlButton("Fit width")
         rotateButton = createControlButton("Auto rotate")
-        spreadButton = createControlButton("Two pages")
         toolsButton = createControlButton("Tools")
 
         sepiaButton.setOnClickListener {
@@ -233,24 +230,15 @@ class PdfViewerActivity : Activity() {
             rotateButton.isSelected = autoRotateEnabled
         }
 
-        spreadButton.setOnClickListener {
-            twoPageMode = !twoPageMode
-            spreadButton.text = if (twoPageMode) "Two pages: On" else "Two pages"
-            spreadButton.isSelected = twoPageMode
-            switchReaderContainer()
-        }
-
-        listOf(sepiaButton, fitButton, rotateButton, spreadButton, toolsButton)
+        listOf(sepiaButton, fitButton, rotateButton, toolsButton)
             .forEachIndexed { index, button ->
                 controlsRow.addView(button, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(48)
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(42)
                 ).apply {
                     if (index > 0) marginStart = dp(6)
                 })
             }
 
-        spreadButton.isEnabled = true
-        spreadButton.alpha = 1f
         toolsButton.setOnClickListener { showToolsMenu(toolsButton) }
 
         val controlsScroll = android.widget.HorizontalScrollView(this).apply {
@@ -735,7 +723,7 @@ class PdfViewerActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.TOP
             }
-            val count = if (twoPageMode && index + 1 < total) 2 else 1
+            val count = 1
             repeat(count) {
                 val pageIndex = index + it
                 val image = ZoomableImageView(this, { direction ->
@@ -891,7 +879,7 @@ class PdfViewerActivity : Activity() {
             gravity = Gravity.CENTER
             setTextColor(Color.WHITE)
             minWidth = dp(88)
-            minHeight = dp(48)
+            minHeight = dp(42)
             setPadding(dp(14), dp(6), dp(14), dp(6))
             background = android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(Color.argb(65, 167, 139, 250)),
