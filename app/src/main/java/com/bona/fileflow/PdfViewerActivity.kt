@@ -1321,6 +1321,9 @@ class PdfViewerActivity : Activity() {
 
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     multiTouch = true
+                    // A ScrollView parent otherwise steals the pinch gesture
+                    // before the page can apply its zoom matrix.
+                    parent?.requestDisallowInterceptTouchEvent(true)
                     velocityTracker?.addMovement(event)
                     scaleDetector.onTouchEvent(event)
                     return true
@@ -1329,6 +1332,12 @@ class PdfViewerActivity : Activity() {
                 MotionEvent.ACTION_MOVE -> {
                     velocityTracker?.addMovement(event)
                     scaleDetector.onTouchEvent(event)
+
+                    if (currentScale > baseScale * 1.01f) {
+                        // Keep the parent from scrolling while the user pans
+                        // a zoomed page with one finger.
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                    }
 
                     if (!scaleDetector.isInProgress &&
                         event.pointerCount == 1 &&
@@ -1382,12 +1391,14 @@ class PdfViewerActivity : Activity() {
                     velocityTracker?.recycle()
                     velocityTracker = null
                     scaleDetector.onTouchEvent(event)
+                    parent?.requestDisallowInterceptTouchEvent(false)
                     return true
                 }
 
                 MotionEvent.ACTION_CANCEL -> {
                     velocityTracker?.recycle()
                     velocityTracker = null
+                    parent?.requestDisallowInterceptTouchEvent(false)
                     return true
                 }
             }
