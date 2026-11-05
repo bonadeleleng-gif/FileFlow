@@ -985,40 +985,64 @@ class MainActivity : ComponentActivity() {
 
     private fun moveToPrivateFolder(item: DocumentItem) {
         verifyPrivatePin {
-            var destination: File? = null
-            var savedAsPrivate = false
-            try {
-                val folder = File(filesDir, "private_documents")
-                if (!folder.exists() && !folder.mkdirs()) {
-                    throw IllegalStateException("Could not create the private folder.")
+            Toast.makeText(this, "Copying document to private storage…", Toast.LENGTH_SHORT).show()
+            backgroundExecutor.execute {
+                var privateFile: File? = null
+                try {
+                    val folder = File(filesDir, "private_documents")
+                    if (!folder.exists() && !folder.mkdirs()) {
+                        throw IllegalStateException("Could not create the private folder.")
+                    }
+                    val safeName = item.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
+                        .ifBlank { "document" }
+                    val destination = File(folder, "${System.currentTimeMillis()}_$safeName")
+                    privateFile = destination
+                    val source = contentResolver.openInputStream(Uri.parse(item.uri))
+                        ?: throw IllegalStateException("Could not read the selected document.")
+                    source.use { input ->
+                        destination.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val privateUri = FileProvider.getUriForFile(
+                        this, "$packageName.fileprovider", destination
+                    )
+                    mainHandler.post {
+                        if (isFinishing || isDestroyed) {
+                            destination.delete()
+                            return@post
+                        }
+                        val index = documents.indexOfFirst {
+                            it.uri == item.uri && !it.isDeleted
+                        }
+                        if (index < 0) {
+                            destination.delete()
+                            Toast.makeText(
+                                this, "The document changed before the private copy finished.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@post
+                        }
+                        documents[index] = item.copy(
+                            uri = privateUri.toString(),
+                            isPrivate = true,
+                            privatePath = destination.absolutePath
+                        )
+                        saveDocuments()
+                        renderDocuments()
+                        Toast.makeText(
+                            this, "Private copy created inside FileFlow.", Toast.LENGTH_LONG
+                        ).show()
+                    }
+                } catch (e: Exception) {
+                    privateFile?.delete()
+                    mainHandler.post {
+                        if (!isFinishing && !isDestroyed) {
+                            Toast.makeText(
+                                this, "Could not create private copy: ${e.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
                 }
-                val safeName = item.name.replace(Regex("[^A-Za-z0-9._-]"), "_")
-                val privateFile = File(folder, "${System.currentTimeMillis()}_$safeName")
-                destination = privateFile
-                val source = contentResolver.openInputStream(Uri.parse(item.uri))
-                    ?: throw IllegalStateException("Could not read the selected document.")
-                source.use { input ->
-                    privateFile.outputStream().use { output -> input.copyTo(output) }
-                }
-                val privateUri = FileProvider.getUriForFile(
-                    this, "$packageName.fileprovider", privateFile
-                )
-                val index = documents.indexOfFirst { it.uri == item.uri }
-                if (index < 0) {
-                    throw IllegalStateException("This document is no longer in your library.")
-                }
-                documents[index] = item.copy(
-                    uri = privateUri.toString(),
-                    isPrivate = true,
-                    privatePath = privateFile.absolutePath
-                )
-                savedAsPrivate = true
-                saveDocuments()
-                renderDocuments()
-                Toast.makeText(this, "Private copy created inside FileFlow.", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                if (!savedAsPrivate) destination?.delete()
-                Toast.makeText(this, "Could not create private copy: ${e.message}", Toast.LENGTH_LONG).show()
             }
         }
     }
