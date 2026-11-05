@@ -825,7 +825,7 @@ class PdfViewerActivity : Activity() {
             params.width = (size.first * factor).toInt().coerceAtLeast(1)
             params.height = (size.second * factor).toInt().coerceAtLeast(1)
             params.weight = 0f
-            val margin = dp(3 * factor)
+            val margin = dp((3f * factor).toInt())
             params.marginStart = if (params.marginStart > 0) margin else 0
             params.marginEnd = if (params.marginEnd > 0) margin else 0
             image.layoutParams = params
@@ -834,7 +834,7 @@ class PdfViewerActivity : Activity() {
             val params = row.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
             params.width = (baseWidth * factor).toInt()
             params.height = (baseHeight * factor).toInt()
-            params.bottomMargin = dp(8 * factor)
+            params.bottomMargin = dp((8f * factor).toInt())
             row.layoutParams = params
         }
         val maxWidth = continuousRows.maxOfOrNull { (row, baseWidth, _) ->
