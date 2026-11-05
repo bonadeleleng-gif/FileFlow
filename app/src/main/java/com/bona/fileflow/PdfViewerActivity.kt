@@ -1385,9 +1385,10 @@ class PdfViewerActivity : Activity() {
         }
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            if (annotationMode != null && event.pointerCount == 1) {
+            if (annotationMode != null) {
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        parent?.requestDisallowInterceptTouchEvent(true)
                         activeStroke = SavedStroke(
                             annotationMode!!,
                             mutableListOf(normalizedImagePoint(event.x, event.y))
@@ -1395,29 +1396,40 @@ class PdfViewerActivity : Activity() {
                         invalidate()
                         return true
                     }
-                    MotionEvent.ACTION_MOVE -> {
-                        activeStroke?.points?.add(normalizedImagePoint(event.x, event.y))
+                    MotionEvent.ACTION_POINTER_DOWN -> {
+                        // Do not turn a two-finger gesture into a malformed annotation.
+                        activeStroke = null
                         invalidate()
                         return true
                     }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (event.pointerCount == 1) {
+                            activeStroke?.points?.add(normalizedImagePoint(event.x, event.y))
+                            invalidate()
+                        }
+                        return true
+                    }
+                    MotionEvent.ACTION_POINTER_UP -> return true
                     MotionEvent.ACTION_UP -> {
                         activeStroke?.points?.add(normalizedImagePoint(event.x, event.y))
                         activeStroke?.let { savedStrokes.add(it) }
                         activeStroke = null
                         saveAnnotations()
                         invalidate()
+                        parent?.requestDisallowInterceptTouchEvent(false)
                         performClick()
                         return true
                     }
                     MotionEvent.ACTION_CANCEL -> {
                         activeStroke = null
                         invalidate()
+                        parent?.requestDisallowInterceptTouchEvent(false)
                         return true
                     }
                 }
             }
-            when (event.actionMasked) {
 
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     velocityTracker?.recycle()
                     velocityTracker = VelocityTracker.obtain()
@@ -1428,6 +1440,9 @@ class PdfViewerActivity : Activity() {
                     lastX = event.x
                     lastY = event.y
                     multiTouch = false
+                    parent?.requestDisallowInterceptTouchEvent(
+                        currentScale > baseScale * 1.01f
+                    )
 
                     scaleDetector.onTouchEvent(event)
                     return true
@@ -1435,8 +1450,6 @@ class PdfViewerActivity : Activity() {
 
                 MotionEvent.ACTION_POINTER_DOWN -> {
                     multiTouch = true
-                    // A ScrollView parent otherwise steals the pinch gesture
-                    // before the page can apply its zoom matrix.
                     parent?.requestDisallowInterceptTouchEvent(true)
                     velocityTracker?.addMovement(event)
                     scaleDetector.onTouchEvent(event)
@@ -1448,8 +1461,6 @@ class PdfViewerActivity : Activity() {
                     scaleDetector.onTouchEvent(event)
 
                     if (currentScale > baseScale * 1.01f) {
-                        // Keep the parent from scrolling while the user pans
-                        // a zoomed page with one finger.
                         parent?.requestDisallowInterceptTouchEvent(true)
                     }
 
@@ -1473,6 +1484,11 @@ class PdfViewerActivity : Activity() {
                 MotionEvent.ACTION_POINTER_UP -> {
                     multiTouch = true
                     scaleDetector.onTouchEvent(event)
+                    val remainingIndex = if (event.actionIndex == 0) 1 else 0
+                    if (remainingIndex < event.pointerCount) {
+                        lastX = event.getX(remainingIndex)
+                        lastY = event.getY(remainingIndex)
+                    }
                     return true
                 }
 
@@ -1483,15 +1499,13 @@ class PdfViewerActivity : Activity() {
                     val dx = event.x - startX
                     val dy = event.y - startY
                     val velocityY = velocityTracker?.yVelocity ?: 0f
-
                     val verticalSwipe = abs(dy) > abs(dx) * 1.2f
                     val longEnough = abs(dy) > swipeThreshold
                     val fastEnough = abs(velocityY) > minimumVelocity
 
                     if (swipeNavigationEnabled && !multiTouch &&
                         currentScale <= baseScale * 1.01f &&
-                        verticalSwipe &&
-                        (longEnough || fastEnough)
+                        verticalSwipe && (longEnough || fastEnough)
                     ) {
                         if (dy < 0 || velocityY < -minimumVelocity) {
                             onPageSwipe(1)
@@ -1520,7 +1534,6 @@ class PdfViewerActivity : Activity() {
             scaleDetector.onTouchEvent(event)
             return true
         }
-
         override fun performClick(): Boolean {
             super.performClick()
             return true
